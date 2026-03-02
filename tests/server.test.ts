@@ -205,9 +205,35 @@ describe("OpenCodeMcpServer Unit Tests", () => {
     expect(res.content[0].text).toContain("Unknown tool");
   });
 
+  test("should abort opencode session", async () => {
+    mock.onGet("/global/health").reply(200, { healthy: true });
+    mock.onPost("/session/xyz-session/abort").reply(200, {});
+
+    const res: any = await mcpClient.callTool({
+      name: "opencode_abort_session",
+      arguments: { sessionId: "xyz-session" },
+    });
+
+    expect(res.isError).toBeUndefined();
+    expect(res.content[0].text).toContain("aborted successfully");
+  });
+
+  test("should delete opencode session", async () => {
+    mock.onGet("/global/health").reply(200, { healthy: true });
+    mock.onDelete("/session/del-session").reply(200, {});
+
+    const res: any = await mcpClient.callTool({
+      name: "opencode_delete_session",
+      arguments: { sessionId: "del-session" },
+    });
+
+    expect(res.isError).toBeUndefined();
+    expect(res.content[0].text).toContain("deleted successfully");
+  });
+
   test("should list all tools gracefully", async () => {
     const res: any = await mcpClient.listTools();
-    expect(res.tools.length).toBe(9);
+    expect(res.tools.length).toBe(11);
     expect(res.tools.map((t: any) => t.name)).toContain("opencode_list_agents");
   });
 

@@ -1,8 +1,22 @@
 {
   "name": "opencode-mcp",
+  "version": "1.0.0",
+  "description": "Enterprise-grade MCP server for seamless integration with the OpenCode swarm and CLI agents.",
   "module": "src/index.ts",
   "type": "module",
   "private": true,
+  "author": "Jinto AG",
+  "license": "MIT",
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "opencode",
+    "agent",
+    "ai",
+    "swarm",
+    "claude",
+    "cursor"
+  ],
   "scripts": {
     "start": "bun run src/index.ts",
     "test": "bun test",

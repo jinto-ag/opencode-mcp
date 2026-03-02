@@ -149,6 +149,30 @@ export class OpenCodeMcpServer {
             },
           },
           {
+            name: "opencode_abort_session",
+            description:
+              "Abort a currently running or stuck OpenCode session or background task.",
+            inputSchema: {
+              type: "object",
+              properties: {
+                sessionId: { type: "string" },
+              },
+              required: ["sessionId"],
+            },
+          },
+          {
+            name: "opencode_delete_session",
+            description:
+              "Delete an OpenCode session to clean up the workspace history.",
+            inputSchema: {
+              type: "object",
+              properties: {
+                sessionId: { type: "string" },
+              },
+              required: ["sessionId"],
+            },
+          },
+          {
             name: "opencode_list_agents",
             description: "List available agents in OpenCode.",
             inputSchema: {
@@ -304,6 +328,32 @@ export class OpenCodeMcpServer {
               {
                 type: "text",
                 text: `Result:\n${JSON.stringify(shellRes.data)}`,
+              },
+            ],
+          };
+        }
+
+        if (toolName === "opencode_abort_session") {
+          const { sessionId } = args;
+          await this.apiClient.post(`/session/${sessionId}/abort`);
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Session ${sessionId} aborted successfully.`,
+              },
+            ],
+          };
+        }
+
+        if (toolName === "opencode_delete_session") {
+          const { sessionId } = args;
+          await this.apiClient.delete(`/session/${sessionId}`);
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Session ${sessionId} deleted successfully.`,
               },
             ],
           };
