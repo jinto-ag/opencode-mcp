@@ -52,13 +52,19 @@ export class OpenCodeMcpServer {
         return error.response?.status === 429 || error.response?.status! >= 500;
       },
       onRetry: (retryCount, error, requestConfig) => {
-        console.error(
+        this.logError(
           `[Rate Limit or Error] Retrying request ${requestConfig.url} (Attempt ${retryCount}): ${error.message}`,
         );
       },
     });
 
     this.setupHandlers();
+  }
+
+  private logError(...args: any[]) {
+    if (process.env.NODE_ENV !== "test") {
+      console.error(...args);
+    }
   }
 
   /**
@@ -223,11 +229,11 @@ export class OpenCodeMcpServer {
       const toolName = request.params.name;
       const args: any = request.params.arguments || {};
       const logPrefix = `[OpenCode-MCP][${toolName}]`;
-      console.error(`${logPrefix} Executing tool request...`, args);
+      this.logError(`${logPrefix} Executing tool request...`, args);
 
       try {
         await this.checkOpencodeHealth();
-        console.error(`${logPrefix} Health check passed.`);
+        this.logError(`${logPrefix} Health check passed.`);
 
         if (toolName === "opencode_ask_sync") {
           const { task, agent, model } = args;
@@ -273,7 +279,7 @@ export class OpenCodeMcpServer {
                 isRunning = false;
               }
             } catch (e) {
-              console.error(`${logPrefix} Polling error:`, e);
+              this.logError(`${logPrefix} Polling error:`, e);
             }
             attempts++;
           }
@@ -308,7 +314,7 @@ export class OpenCodeMcpServer {
               summary = `Task stopped. Status: ${lastStatusObj.type} - ${lastStatusObj.message}`;
             }
           } catch (e) {
-            console.error(`${logPrefix} Error fetching final messages:`, e);
+            this.logError(`${logPrefix} Error fetching final messages:`, e);
           }
 
           return {
@@ -489,7 +495,7 @@ export class OpenCodeMcpServer {
         if (error.response?.data)
           msg += ` - API: ${JSON.stringify(error.response.data)}`;
 
-        console.error(`${logPrefix} Error executing tool: ${msg}`, error.stack);
+        this.logError(`${logPrefix} Error executing tool: ${msg}`, error.stack);
 
         return {
           isError: true,
