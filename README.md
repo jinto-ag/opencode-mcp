@@ -1,5 +1,10 @@
 # OpenCode MCP Server
 
+[![CI](https://github.com/jinto-ag/opencode-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/jinto-ag/opencode-mcp/actions/workflows/ci.yml)
+[![Version](https://img.shields.io/github/v/release/jinto-ag/opencode-mcp?sort=semver)](https://github.com/jinto-ag/opencode-mcp/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Tested with Bun](https://img.shields.io/badge/Bun-%23000000.svg?logo=bun&logoColor=white)](https://bun.sh)
+
 An **Enterprise-Grade** Model Context Protocol (MCP) server for seamlessly integrating the OpenCode swarm and CLI into large-scale, automated environments. Fully supports advanced features dynamically introduced by the `oh-my-opencode` extensions such as custom agent injection (`@hephaestus`, `@momus`), custom models, rate limit mitigations, and resilient connection pooling.
 
 Built locally with [Bun](https://bun.sh) and `@modelcontextprotocol/sdk`. Highly performant and tested up to 100% coverage.
@@ -19,6 +24,15 @@ You must have `bun` and `opencode` installed.
 
 ```bash
 bun install
+```
+
+### Pre-Compiled Standalone Binary (Optimized)
+
+For environments where you want maximum startup performance or do not wish to use the `bun run` runtime directly, you can compile the server into an optimized standalone binary:
+
+```bash
+bun run build
+./opencode-mcp
 ```
 
 ## Running the Server
@@ -50,9 +64,14 @@ The target language models connecting to this MCP will be granted:
 - `opencode_ask_sync(task, agent?, model?)`: Forward generic tasks blocking until resolution.
 - `opencode_ask_async(task, agent?, model?)`: Launch tasks without blocking, granting a session ID.
 - `opencode_get_session(sessionId, limit)`: Followup tool to poll for swarm completion and read output context trails.
-- `opencode_run_shell(command, sessionId?, agent?)`: Invokes shell tasks autonomously.
+- `opencode_run_shell(command, agent, sessionId?)`: Invokes shell tasks autonomously (requires the orchestrating agent ID).
 - `opencode_list_agents()`: See what context profiles are initialized inside OpenCode.
 - `opencode_list_providers()`: Poll available model capabilities (e.g. fallback choices during heavy load).
+- `opencode_get_config()`: Get the global OpenCode config, including active model, variant, and plugin environments.
+- `opencode_set_config(config)`: Update the global OpenCode config dynamically (e.g. rotating SLMs mid-task).
+- `opencode_health_check()`: Query the direct status of the `/global/health` endpoint.
+- `opencode_abort_session(sessionId)`: Forcefully abort a hanging background OpenCode session.
+- `opencode_delete_session(sessionId)`: Hard-delete an active or completed background session logic chain.
 
 ## Utilizing with `oh-my-opencode` Agents
 

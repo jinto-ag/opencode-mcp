@@ -19,6 +19,7 @@
   ],
   "scripts": {
     "start": "bun run src/index.ts",
+    "build": "bun build src/index.ts --compile --outfile opencode-mcp",
     "test": "bun test",
     "test:coverage": "bun test --coverage",
     "typecheck": "tsc --noEmit",

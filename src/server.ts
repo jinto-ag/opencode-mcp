@@ -222,9 +222,12 @@ export class OpenCodeMcpServer {
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const toolName = request.params.name;
       const args: any = request.params.arguments || {};
+      const logPrefix = `[OpenCode-MCP][${toolName}]`;
+      console.error(`${logPrefix} Executing tool request...`, args);
 
       try {
         await this.checkOpencodeHealth();
+        console.error(`${logPrefix} Health check passed.`);
 
         if (toolName === "opencode_ask_sync") {
           const { task, agent, model } = args;
@@ -425,6 +428,9 @@ export class OpenCodeMcpServer {
         let msg = error.message;
         if (error.response?.data)
           msg += ` - API: ${JSON.stringify(error.response.data)}`;
+
+        console.error(`${logPrefix} Error executing tool: ${msg}`, error.stack);
+
         return {
           isError: true,
           content: [{ type: "text", text: `Error: ${msg}` }],
