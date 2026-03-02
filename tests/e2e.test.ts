@@ -58,6 +58,7 @@ describe("OpenCodeMcpServer E2E Tests", () => {
       expect(configRes.isError).toBeUndefined();
       expect(configRes.content[0].text).toContain("Config:");
     },
+    60000,
   );
 
   test.skipIf(!process.env.OPENCODE_TEST_E2E)(
@@ -70,6 +71,7 @@ describe("OpenCodeMcpServer E2E Tests", () => {
       expect(providersRes.isError).toBeUndefined();
       expect(providersRes.content[0].text).toContain("Providers:");
     },
+    60000,
   );
 
   test.skipIf(!process.env.OPENCODE_TEST_E2E)(
@@ -84,25 +86,27 @@ describe("OpenCodeMcpServer E2E Tests", () => {
     },
   );
 
-  // This is skipped by default to avoid hanging E2E runs randomly if the LLM backend heavily queues
-  test.skip("should execute opencode_ask_sync", async () => {
-    const syncRes: any = await mcpClient.request(
-      {
-        method: "tools/call",
-        params: {
-          name: "opencode_ask_sync",
-          arguments: {
-            task: "Reply precisely with 'SyncTest'",
-            agent: "hephaestus",
+  test.skipIf(!process.env.OPENCODE_TEST_E2E)(
+    "should execute opencode_ask_sync",
+    async () => {
+      const syncRes: any = await mcpClient.request(
+        {
+          method: "tools/call",
+          params: {
+            name: "opencode_ask_sync",
+            arguments: {
+              task: "Reply precisely with 'SyncTest'",
+            },
           },
         },
-      },
-      CallToolResultSchema,
-      { timeout: 120000 },
-    );
-    expect(syncRes.isError).toBeUndefined();
-    expect(syncRes.content[0].text).toContain("Session ID:");
-  }, 120000);
+        CallToolResultSchema,
+        { timeout: 300000 },
+      );
+      expect(syncRes.isError).toBeUndefined();
+      expect(syncRes.content[0].text).toContain("Session ID:");
+    },
+    300000,
+  );
 
   test.skipIf(!process.env.OPENCODE_TEST_E2E)(
     "should start an async task",
@@ -137,6 +141,7 @@ describe("OpenCodeMcpServer E2E Tests", () => {
       expect(sessionRes.isError).toBeUndefined();
       expect(sessionRes.content[0].text).toContain("Status:");
     },
+    60000,
   );
 
   test.skipIf(!process.env.OPENCODE_TEST_E2E)(
@@ -144,7 +149,7 @@ describe("OpenCodeMcpServer E2E Tests", () => {
     async () => {
       const shellRes: any = await mcpClient.callTool({
         name: "opencode_run_shell",
-        arguments: { command: "echo E2EShellCheck", agent: "hephaestus" },
+        arguments: { command: "echo E2EShellCheck", agent: "explore" },
       });
       expect(shellRes.isError).toBeUndefined();
       expect(shellRes.content[0].text).toContain("Result:");

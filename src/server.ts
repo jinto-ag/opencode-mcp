@@ -241,21 +241,81 @@ export class OpenCodeMcpServer {
           if (agent) payload.agent = agent;
           if (model) payload.model = model;
 
-          const messageRes = await this.apiClient.post(
-            `/session/${sessionId}/message`,
+          // Start asynchronously to avoid Axios hanging on streaming SSE responses
+          await this.apiClient.post(
+            `/session/${sessionId}/prompt_async`,
             payload,
           );
-          const parts = messageRes.data?.parts || [];
-          const textParts = parts
-            .filter((p: any) => p.type === "text")
-            .map((p: any) => p.text)
-            .join("\n\n");
+
+          // Poll for completion to give the illusion of sync while preventing Axios network hangups
+          let isRunning = true;
+          let attempts = 0;
+          let lastStatusObj: any = null;
+          const pollDelay = process.env.NODE_ENV === "test" ? 100 : 5000;
+          while (isRunning && attempts < 120) {
+            // Max ~10 mins
+            await new Promise((r) => setTimeout(r, pollDelay));
+            try {
+              const statusRes = await this.apiClient.get("/session/status");
+              const status = statusRes.data?.[sessionId];
+              if (status) lastStatusObj = status;
+
+              // Handle both primitive string statuses and complex object statuses (like retries or errors)
+              const statusValue =
+                typeof status === "object" ? status.type : status;
+
+              if (
+                !statusValue ||
+                ["waiting_for_user", "stopped", "error", "retry"].includes(
+                  statusValue,
+                )
+              ) {
+                isRunning = false;
+              }
+            } catch (e) {
+              console.error(`${logPrefix} Polling error:`, e);
+            }
+            attempts++;
+          }
+
+          // Fetch final messages to get the outcome
+          let summary = "Done.";
+          try {
+            const messageRes = await this.apiClient.get(
+              `/session/${sessionId}/message?limit=10`,
+            );
+            const messages = messageRes.data || [];
+
+            // Extract the last non-empty text part from the latest messages easily
+            const textParts = messages
+              .map(
+                (m: any) =>
+                  m.parts
+                    ?.filter((p: any) => p.type === "text")
+                    .map((p: any) => p.text)
+                    .join("\n") || "",
+              )
+              .filter(Boolean)
+              .join("\n\n---\n\n");
+
+            if (textParts.length > 0) {
+              summary = textParts;
+            } else if (
+              lastStatusObj &&
+              typeof lastStatusObj === "object" &&
+              lastStatusObj.message
+            ) {
+              summary = `Task stopped. Status: ${lastStatusObj.type} - ${lastStatusObj.message}`;
+            }
+          } catch (e) {
+            console.error(`${logPrefix} Error fetching final messages:`, e);
+          }
 
           return {
             content: [
               {
                 type: "text",
-                text: `Session ID: ${sessionId}\n\nAgent Response:\n${textParts || "Done."}`,
+                text: `Session ID: ${sessionId}\n\nAgent Response:\n${summary}`,
               },
             ],
           };

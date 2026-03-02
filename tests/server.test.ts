@@ -98,12 +98,18 @@ describe("OpenCodeMcpServer Unit Tests", () => {
   test("should start opencode_ask_sync", async () => {
     mock.onGet("/global/health").reply(200, { healthy: true });
     mock.onPost("/session").reply(200, { id: "sync-session" });
-    mock.onPost("/session/sync-session/message").reply(200, {
-      parts: [
-        { type: "text", text: "I fixed the issue." },
-        { type: "image" }, // simulate a non-text response part
-      ],
-    });
+    mock.onPost("/session/sync-session/prompt_async").reply(204);
+
+    // Polling setup: Returns stopped to exit while loop immediately
+    mock.onGet("/session/status").reply(200, { "sync-session": "stopped" });
+    mock.onGet("/session/sync-session/message?limit=10").reply(200, [
+      {
+        parts: [
+          { type: "text", text: "I fixed the issue." },
+          { type: "image" }, // simulate a non-text response part
+        ],
+      },
+    ]);
 
     const res: any = await mcpClient.callTool({
       name: "opencode_ask_sync",
