@@ -140,9 +140,12 @@ export class OpenCodeMcpServer {
               properties: {
                 sessionId: { type: "string" },
                 command: { type: "string" },
-                agent: { type: "string" },
+                agent: {
+                  type: "string",
+                  description: "Required agent ID to execute the shell command",
+                },
               },
-              required: ["command"],
+              required: ["command", "agent"],
             },
           },
           {
