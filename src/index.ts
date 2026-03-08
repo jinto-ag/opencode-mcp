@@ -9,6 +9,11 @@ const OPENCODE_MAX_RETRIES = parseInt(
   process.env.OPENCODE_MAX_RETRIES || "3",
   10,
 );
+const OPENCODE_AUTO_START = process.env.OPENCODE_AUTO_START !== "false";
+const OPENCODE_AUTO_START_PORT = parseInt(
+  process.env.OPENCODE_AUTO_START_PORT || "4096",
+  10,
+);
 
 async function main() {
   console.error("Starting OpenCode MCP Server...");
@@ -18,7 +23,38 @@ async function main() {
     username: OPENCODE_USERNAME,
     password: OPENCODE_PASSWORD,
     maxRetries: OPENCODE_MAX_RETRIES,
+    autoStart: OPENCODE_AUTO_START,
+    autoStartPort: OPENCODE_AUTO_START_PORT,
   });
+
+  // Register graceful shutdown handlers
+  const gracefulShutdown = async (signal: string) => {
+    console.error(`\n[OpenCode-MCP] Received ${signal}, shutting down...`);
+    await opencodeServer.shutdown();
+    process.exit(0);
+  };
+
+  process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+  process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+
+  // Non-blocking startup health check — log status but don't fail
+  try {
+    await opencodeServer.checkOpencodeHealth();
+    console.error(
+      `[OpenCode-MCP] OpenCode server is healthy at ${OPENCODE_URL}`,
+    );
+  } catch {
+    if (OPENCODE_AUTO_START) {
+      console.error(
+        `[OpenCode-MCP] OpenCode not reachable at ${OPENCODE_URL} — will auto-start on first tool call.`,
+      );
+    } else {
+      console.error(
+        `[OpenCode-MCP] WARNING: OpenCode not reachable at ${OPENCODE_URL}. ` +
+          `Start it with: opencode serve --port ${OPENCODE_AUTO_START_PORT}`,
+      );
+    }
+  }
 
   const transport = new StdioServerTransport();
   await opencodeServer.server.connect(transport);

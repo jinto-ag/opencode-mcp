@@ -6,19 +6,43 @@ import {
 import axios from "axios";
 import type { AxiosInstance } from "axios";
 import axiosRetry from "axios-retry";
+import { createOpencodeServer } from "@opencode-ai/sdk/server";
 
 export interface OpenCodeConfig {
   url: string;
   username?: string;
   password?: string;
   maxRetries?: number;
+  /** Enable auto-starting OpenCode serve if not reachable. Default: true */
+  autoStart?: boolean;
+  /** Port for auto-started OpenCode server. Default: 4096 */
+  autoStartPort?: number;
+  /** Health check cache TTL in milliseconds. Default: 30000 */
+  healthCacheTtlMs?: number;
+}
+
+/** Internal state for the auto-spawned OpenCode process */
+interface ManagedProcess {
+  url: string;
+  close: () => void;
 }
 
 export class OpenCodeMcpServer {
   public server: Server;
   public apiClient: AxiosInstance;
 
+  private readonly config: OpenCodeConfig;
+  private managedProcess: ManagedProcess | null = null;
+  private isStartingOpenCode = false;
+
+  // Health check cache
+  private lastHealthCheck: { timestamp: number; data: any } | null = null;
+  private readonly healthCacheTtlMs: number;
+
   constructor(config: OpenCodeConfig) {
+    this.config = config;
+    this.healthCacheTtlMs = config.healthCacheTtlMs ?? 30_000;
+
     this.server = new Server(
       {
         name: "opencode-mcp-server",
@@ -43,17 +67,22 @@ export class OpenCodeMcpServer {
       };
     }
 
-    // Rate Exceed bypassing setup
+    // Rate Exceed & Connection resilience setup
     axiosRetry(this.apiClient, {
       retries: config.maxRetries || 3,
       retryDelay: axiosRetry.exponentialDelay,
       retryCondition: (error) => {
+        // Retry on connection errors (ECONNREFUSED, ENOTFOUND, ETIMEDOUT)
+        if (axiosRetry.isNetworkOrIdempotentRequestError(error)) {
+          return true;
+        }
+        const status = error.response?.status ?? 0;
         // Retry on 429 Too Many Requests or 5xx server errors
-        return error.response?.status === 429 || error.response?.status! >= 500;
+        return status === 429 || status >= 500;
       },
       onRetry: (retryCount, error, requestConfig) => {
         this.logError(
-          `[Rate Limit or Error] Retrying request ${requestConfig.url} (Attempt ${retryCount}): ${error.message}`,
+          `[Retry] Request ${requestConfig.url} (Attempt ${retryCount}): ${error.message}`,
         );
       },
     });
@@ -68,9 +97,84 @@ export class OpenCodeMcpServer {
   }
 
   /**
+   * Ensures an OpenCode server is reachable, auto-starting one if configured.
+   * Returns once the server is healthy or throws if all attempts fail.
+   */
+  async ensureOpenCodeRunning(): Promise<void> {
+    // Try existing server first
+    try {
+      await this.checkOpencodeHealth();
+      return;
+    } catch {
+      // Not reachable — try auto-start if enabled
+    }
+
+    if (this.config.autoStart === false) {
+      throw new Error(
+        `OpenCode server is not reachable at ${this.config.url}. ` +
+          `Start it manually: opencode serve --port ${this.config.autoStartPort ?? 4096} ` +
+          `or set OPENCODE_SERVER_URL to point to a running instance.`,
+      );
+    }
+
+    // Prevent concurrent start attempts
+    if (this.isStartingOpenCode) {
+      // Wait for the in-progress start to complete
+      for (let i = 0; i < 50; i++) {
+        await new Promise((r) => setTimeout(r, 200));
+        if (!this.isStartingOpenCode) break;
+      }
+      // Verify it worked
+      await this.checkOpencodeHealth();
+      return;
+    }
+
+    this.isStartingOpenCode = true;
+    try {
+      this.logError(
+        `[OpenCode-MCP] Auto-starting OpenCode server on port ${this.config.autoStartPort ?? 4096}...`,
+      );
+
+      const managed = await createOpencodeServer({
+        port: this.config.autoStartPort ?? 4096,
+        hostname: "127.0.0.1",
+        timeout: 15_000,
+      });
+
+      this.managedProcess = managed;
+
+      // Update the axios baseURL to the actual URL returned by the SDK
+      this.apiClient.defaults.baseURL = managed.url;
+
+      this.logError(
+        `[OpenCode-MCP] OpenCode server auto-started at ${managed.url}`,
+      );
+
+      // Validate health after start
+      await this.checkOpencodeHealth();
+    } catch (error: any) {
+      throw new Error(
+        `Failed to auto-start OpenCode server: ${error.message}. ` +
+          `Start it manually: opencode serve --port ${this.config.autoStartPort ?? 4096}`,
+      );
+    } finally {
+      this.isStartingOpenCode = false;
+    }
+  }
+
+  /**
    * Validates that the OpenCode server is accessible.
+   * Uses a TTL-based cache to avoid hammering on every tool call.
    */
   async checkOpencodeHealth() {
+    // Return cached result if still fresh
+    if (this.lastHealthCheck) {
+      const age = Date.now() - this.lastHealthCheck.timestamp;
+      if (age < this.healthCacheTtlMs) {
+        return this.lastHealthCheck.data;
+      }
+    }
+
     try {
       const res = await this.apiClient.get("/global/health", { timeout: 5000 });
       if (!res.data?.healthy) {
@@ -78,17 +182,59 @@ export class OpenCodeMcpServer {
           `OpenCode server returned unhealthy status: ${JSON.stringify(res.data)}`,
         );
       }
+
+      // Cache the successful result
+      this.lastHealthCheck = { timestamp: Date.now(), data: res.data };
       return res.data;
     } catch (error: any) {
+      // Invalidate cache on failure
+      this.lastHealthCheck = null;
+
       if (error.response) {
         throw new Error(
           `OpenCode server error (${error.response.status}): ${JSON.stringify(error.response.data)}`,
         );
       }
+
+      const baseURL = this.apiClient.defaults.baseURL;
       throw new Error(
-        `Failed to connect to OpenCode server at ${this.apiClient.defaults.baseURL}: ${error.message}`,
+        `Failed to connect to OpenCode server at ${baseURL}: ${error.message}. ` +
+          `Ensure OpenCode is running: opencode serve --port 4096`,
       );
     }
+  }
+
+  /** Invalidate the health cache (useful for testing or after errors). */
+  invalidateHealthCache() {
+    this.lastHealthCheck = null;
+  }
+
+  /**
+   * Gracefully shut down the MCP server and any managed OpenCode process.
+   */
+  async shutdown(): Promise<void> {
+    this.logError("[OpenCode-MCP] Shutting down...");
+
+    try {
+      await this.server.close();
+    } catch {
+      // Server may already be closed
+    }
+
+    if (this.managedProcess) {
+      this.logError(
+        "[OpenCode-MCP] Terminating managed OpenCode server process...",
+      );
+      try {
+        this.managedProcess.close();
+      } catch {
+        // Process may already be terminated
+      }
+      this.managedProcess = null;
+    }
+
+    this.lastHealthCheck = null;
+    this.logError("[OpenCode-MCP] Shutdown complete.");
   }
 
   private setupHandlers() {
@@ -232,8 +378,9 @@ export class OpenCodeMcpServer {
       this.logError(`${logPrefix} Executing tool request...`, args);
 
       try {
-        await this.checkOpencodeHealth();
-        this.logError(`${logPrefix} Health check passed.`);
+        // Ensure OpenCode is running (auto-starts if needed, uses cached health)
+        await this.ensureOpenCodeRunning();
+        this.logError(`${logPrefix} OpenCode server is available.`);
 
         if (toolName === "opencode_ask_sync") {
           const { task, agent, model } = args;
@@ -453,6 +600,8 @@ export class OpenCodeMcpServer {
         }
 
         if (toolName === "opencode_health_check") {
+          // Force a fresh health check (bypass cache)
+          this.invalidateHealthCache();
           const res = await this.checkOpencodeHealth();
           return {
             content: [
@@ -491,6 +640,9 @@ export class OpenCodeMcpServer {
 
         throw new Error(`Unknown tool: ${toolName}`);
       } catch (error: any) {
+        // Invalidate cache on any error to force re-check next time
+        this.invalidateHealthCache();
+
         let msg = error.message;
         if (error.response?.data)
           msg += ` - API: ${JSON.stringify(error.response.data)}`;
