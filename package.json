@@ -1,7 +1,7 @@
 {
   "name": "opencode-mcp",
   "version": "1.0.0",
-  "description": "Enterprise-grade MCP server for seamless integration with the OpenCode swarm and CLI agents.",
+  "description": "MCP server for integrating AI-powered IDEs with OpenCode agents. Supports multi-agent delegation, auto-start, and resilient connections.",
   "module": "src/index.ts",
   "type": "module",
   "private": true,

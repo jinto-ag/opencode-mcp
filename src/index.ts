@@ -37,7 +37,7 @@ async function main() {
   process.on("SIGINT", () => gracefulShutdown("SIGINT"));
   process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 
-  // Non-blocking startup health check — log status but don't fail
+  // Non-blocking startup health probe: logs status without preventing initialization
   try {
     await opencodeServer.checkOpencodeHealth();
     console.error(
@@ -46,7 +46,7 @@ async function main() {
   } catch {
     if (OPENCODE_AUTO_START) {
       console.error(
-        `[OpenCode-MCP] OpenCode not reachable at ${OPENCODE_URL} — will auto-start on first tool call.`,
+        `[OpenCode-MCP] OpenCode server is not reachable at ${OPENCODE_URL}. Will provision automatically on first tool invocation.`,
       );
     } else {
       console.error(

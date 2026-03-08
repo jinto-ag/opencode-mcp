@@ -1,24 +1,37 @@
-# Contributing to OpenCode-MCP
+# Contributing to OpenCode MCP Server
 
-First off, thank you for considering contributing to OpenCode-MCP.
+Thank you for your interest in contributing to this project.
 
-### 1. Where do I go from here?
+## Getting Started
 
-If you've noticed a bug or have a request, make sure it hasn't already been reported in the issue tracker. If it hasn't, open a new issue.
+If you have identified a bug or would like to request a feature, please verify that it has not already been reported in the [issue tracker](https://github.com/jinto-ag/opencode-mcp/issues). If no existing issue matches, open a new one with a detailed description.
 
-### 2. Fork & create a branch
+## Development Workflow
 
-If this is something you think you can fix, then fork OpenCode-MCP and create a branch with a descriptive name.
+### 1. Fork and Branch
 
-### 3. Get the test suite running
+Fork the repository and create a feature branch with a descriptive name:
 
-Make sure you have `bun` installed.
-Run `bun install` and run the tests: `bun test --coverage`.
+```bash
+git checkout -b feat/your-feature-name
+```
 
-### 4. Implement your fix or feature
+### 2. Install Dependencies and Run Tests
 
-At this point, you're ready to make your changes. We strictly use [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) for all PRs and commits.
+Ensure you have [Bun](https://bun.sh) installed, then:
 
-### 5. Make a Pull Request
+```bash
+bun install
+bun test --coverage
+bun run typecheck
+```
 
-At this point, you should switch back to your master branch and make sure it's up to date with OpenCode-MCP's master branch. Then, submit a PR!
+All tests must pass and type checking must succeed before submitting changes.
+
+### 3. Implement Changes
+
+Make your changes following the existing code style and patterns. All commits must follow the [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) specification.
+
+### 4. Submit a Pull Request
+
+Ensure your branch is up to date with `main`, then submit a pull request with a clear description of the changes and their rationale.

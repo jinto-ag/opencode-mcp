@@ -172,7 +172,7 @@ describe("OpenCodeMcpServer Unit Tests", () => {
 
     const res: any = await mcpClient.callTool({
       name: "opencode_run_shell",
-      arguments: { command: "ls" },
+      arguments: { command: "ls", agent: "ops" },
     });
 
     expect(res.isError).toBeUndefined();
@@ -224,7 +224,7 @@ describe("OpenCodeMcpServer Unit Tests", () => {
       arguments: {},
     });
     expect(res.isError).toBe(true);
-    expect(res.content[0].text).toContain("Unknown tool");
+    expect(res.content[0].text).toContain("Unrecognized tool");
   });
 
   test("should abort opencode session", async () => {
@@ -269,6 +269,100 @@ describe("OpenCodeMcpServer Unit Tests", () => {
     });
     expect(res.isError).toBe(true);
     expect(res.content[0].text).toContain("fatal");
+  });
+});
+
+describe("Input Validation", () => {
+  let mcpServer: OpenCodeMcpServer;
+  let mockAxios: MockAdapter;
+  let mcpClient: Client;
+
+  beforeEach(async () => {
+    mcpServer = new OpenCodeMcpServer({
+      url: "http://localhost:4096",
+      autoStart: false,
+      healthCacheTtlMs: 0,
+    });
+    mockAxios = new MockAdapter(mcpServer.apiClient);
+    mockAxios.onGet("/global/health").reply(200, { healthy: true });
+
+    const transports = InMemoryTransport.createLinkedPair();
+    await mcpServer.server.connect(transports[1]);
+
+    mcpClient = new Client(
+      { name: "test-validation", version: "1" },
+      { capabilities: {} },
+    );
+    await mcpClient.connect(transports[0]);
+  });
+
+  afterEach(async () => {
+    mockAxios.restore();
+    try {
+      await mcpServer.server.close();
+      await mcpClient.close();
+    } catch {
+      // Transport may already be closed
+    }
+  });
+
+  test("should reject opencode_ask_sync with empty task", async () => {
+    const res: any = await mcpClient.callTool({
+      name: "opencode_ask_sync",
+      arguments: { task: "" },
+    });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toContain("Validation error");
+    expect(res.content[0].text).toContain("task");
+  });
+
+  test("should reject opencode_ask_async with missing task", async () => {
+    const res: any = await mcpClient.callTool({
+      name: "opencode_ask_async",
+      arguments: {},
+    });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toContain("Validation error");
+  });
+
+  test("should reject opencode_run_shell with empty command", async () => {
+    const res: any = await mcpClient.callTool({
+      name: "opencode_run_shell",
+      arguments: { command: "", agent: "ops" },
+    });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toContain("Validation error");
+    expect(res.content[0].text).toContain("command");
+  });
+
+  test("should reject opencode_run_shell with missing agent", async () => {
+    const res: any = await mcpClient.callTool({
+      name: "opencode_run_shell",
+      arguments: { command: "ls" },
+    });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toContain("Validation error");
+    expect(res.content[0].text).toContain("agent");
+  });
+
+  test("should reject opencode_abort_session with missing sessionId", async () => {
+    const res: any = await mcpClient.callTool({
+      name: "opencode_abort_session",
+      arguments: {},
+    });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toContain("Validation error");
+    expect(res.content[0].text).toContain("sessionId");
+  });
+
+  test("should reject opencode_set_config with non-object config", async () => {
+    const res: any = await mcpClient.callTool({
+      name: "opencode_set_config",
+      arguments: { config: "not-an-object" },
+    });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toContain("Validation error");
+    expect(res.content[0].text).toContain("config");
   });
 });
 

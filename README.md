@@ -5,38 +5,45 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Tested with Bun](https://img.shields.io/badge/Bun-%23000000.svg?logo=bun&logoColor=white)](https://bun.sh)
 
-An **Enterprise-Grade** Model Context Protocol (MCP) server for seamlessly integrating the [OpenCode](https://github.com/anomalyco/opencode) swarm and CLI into large-scale, automated environments. Fully supports advanced features dynamically introduced by the `oh-my-opencode` extensions such as custom agent injection (`@hephaestus`, `@momus`), custom models, rate limit mitigations, and resilient connection pooling.
+A production-ready [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server that integrates AI-powered IDEs with [OpenCode](https://github.com/anomalyco/opencode) agents. Supports multi-agent delegation, dynamic model selection, rate-limit mitigation, and resilient connection management.
 
-Built locally with [Bun](https://bun.sh), `@modelcontextprotocol/sdk`, and `@opencode-ai/sdk`. Highly performant, self-healing, and tested at 100% line coverage.
+Built with [Bun](https://bun.sh), [`@modelcontextprotocol/sdk`](https://www.npmjs.com/package/@modelcontextprotocol/sdk), and [`@opencode-ai/sdk`](https://www.npmjs.com/package/@opencode-ai/sdk). Validated at 100% line coverage.
 
-## Highlights
+## Key Capabilities
 
-- **Zero-Configuration Auto-Start** — Automatically spawns `opencode serve` via the official SDK if no server is running. No manual setup required.
-- **Resilient Connection Handling** — Retries on `ECONNREFUSED`, `ENOTFOUND`, `ETIMEDOUT`, HTTP `429`, and `5xx` errors with exponential backoff.
-- **Cached Health Checks** — Validates OpenCode server health with a 30-second TTL cache, avoiding redundant network calls on every tool invocation.
-- **Graceful Lifecycle Management** — `SIGINT`/`SIGTERM` handlers cleanly terminate any auto-spawned OpenCode process.
-- **Actionable Error Messages** — Connection failures include precise remediation guidance.
+- **Automatic Server Provisioning** — Detects and spawns `opencode serve` via the official SDK when no running instance is found. No manual setup required.
+- **Resilient Connection Management** — Automatic retries with exponential backoff for `ECONNREFUSED`, `ENOTFOUND`, `ETIMEDOUT`, HTTP `429`, and `5xx` responses.
+- **Optimized Health Monitoring** — Server availability is validated with a configurable TTL-based cache (default: 30 seconds), minimizing redundant network overhead.
+- **Graceful Lifecycle Management** — `SIGINT` and `SIGTERM` signals trigger orderly termination of any managed OpenCode processes.
+- **Diagnostic Error Reporting** — Connection failures include specific remediation instructions and contextual details.
+- **Input Validation** — All tool arguments are validated before dispatching to the OpenCode API, preventing malformed requests.
 
 ## Features
 
-- **Asynchronous Task Delegation (`opencode_ask_async`)**: Deep integration with OpenCode's `/prompt_async` endpoint allows background processing. Hand off a major codebase refactor to a swarm, receive a session ID instantly, and poll for progress—never blocking the active MCP connection.
-- **Synchronous Commands (`opencode_ask_sync`)**: Execute short-lived queries where you want OpenCode's response blocking. Internally polls via `/session/status` to simulate synchronous behavior without network hangups.
-- **Agent and Model Swapping**: Injects custom `agent` profiles (e.g. `hephaestus` for implementation or `momus` for quality checks) and overrides the active SLM/LLM profile dynamically.
-- **Resilient Rate Limits Bypass Mechanism**: Integrates `axios-retry` with automatic exponential backoff on `429 Too Many Requests`, `5xx` server errors, and transient network failures (`ECONNREFUSED`, `ENOTFOUND`).
-- **Direct Shell Interop**: Control standard shells wrapped around the active session workspaces via `opencode_run_shell`.
-- **E2E and Unit Test Ready**: Ships with full `bun test` validations at 100% line coverage.
+| Feature | Description |
+|---------|-------------|
+| **Asynchronous Task Delegation** | Submits tasks to OpenCode's `/prompt_async` endpoint for background processing. Returns a session ID immediately for non-blocking operation. |
+| **Synchronous Execution** | Executes tasks with internal status polling, returning the final result upon completion. |
+| **Multi-Agent Delegation** | Route tasks to any OpenCode-native agent (e.g., `hephaestus` for implementation, `momus` for review, `oracle` for analysis). Run multiple agents concurrently via parallel async sessions. |
+| **Dynamic Model Selection** | Switch the active LLM model at runtime via `opencode_set_config` — useful for routing complex tasks to larger models. |
+| **Rate-Limit Mitigation** | Integrates `axios-retry` with exponential backoff for `429 Too Many Requests`, `5xx` server errors, and transient network failures. |
+| **Remote Shell Execution** | Executes shell commands within OpenCode session workspaces via `opencode_run_shell`. |
+| **Comprehensive Test Coverage** | Ships with unit tests and end-to-end tests at 100% line coverage. |
+
+## Prerequisites
+
+- [Bun](https://bun.sh) v1.0 or later
+- [OpenCode](https://github.com/anomalyco/opencode) v1.2 or later
 
 ## Installation
-
-You must have `bun` (v1.0+) and `opencode` (v1.2+) installed.
 
 ```bash
 bun install
 ```
 
-### Pre-Compiled Standalone Binary (Optimized)
+### Compiled Binary
 
-For environments where you want maximum startup performance or do not wish to use the `bun run` runtime directly, you can compile the server into an optimized standalone binary:
+For optimized startup performance in production environments:
 
 ```bash
 bun run build
@@ -45,63 +52,62 @@ bun run build
 
 ## Quick Start
 
-The fastest way to get started — the server auto-starts OpenCode for you:
+The server automatically provisions an OpenCode instance on first use:
 
 ```bash
-# Just run it — OpenCode will be auto-spawned on first tool call
 bun run start
 ```
 
-If you prefer to manage OpenCode yourself:
+To connect to an externally managed OpenCode instance:
 
 ```bash
-# Terminal 1: Start OpenCode manually
+# Terminal 1: Start OpenCode separately
 opencode serve --port 4096
 
-# Terminal 2: Start the MCP server
+# Terminal 2: Start the MCP server with auto-start disabled
 OPENCODE_AUTO_START=false bun run start
 ```
 
-## Configuration (Environment Variables)
+## Configuration
 
-This server connects over standard JSON-RPC over `stdio` but communicates with the local/remote OpenCode API server under the hood.
+The server communicates with clients via JSON-RPC over `stdio` and with the OpenCode API via HTTP. All configuration is managed through environment variables.
 
-| Variable                    | Default Value           | Description                                                                                  |
-| --------------------------- | ----------------------- | -------------------------------------------------------------------------------------------- |
-| `OPENCODE_SERVER_URL`       | `http://127.0.0.1:4096` | Base URL of the running OpenCode REST API server.                                           |
-| `OPENCODE_SERVER_USERNAME`  | `opencode`              | Basic auth username (if password is provided).                                               |
-| `OPENCODE_SERVER_PASSWORD`  | _(empty)_               | Optional: Pass if you started your opencode instance with `OPENCODE_SERVER_PASSWORD`.        |
-| `OPENCODE_MAX_RETRIES`      | `3`                     | Maximum exponential back-off retry attempts for `429`, `5xx`, and connection errors.         |
-| `OPENCODE_AUTO_START`       | `true`                  | Set to `false` to disable automatic `opencode serve` spawning. Requires manual server start. |
-| `OPENCODE_AUTO_START_PORT`  | `4096`                  | Port for the auto-started OpenCode server instance.                                          |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OPENCODE_SERVER_URL` | `http://127.0.0.1:4096` | Base URL of the OpenCode REST API server. |
+| `OPENCODE_SERVER_USERNAME` | `opencode` | HTTP Basic Authentication username (applied when a password is configured). |
+| `OPENCODE_SERVER_PASSWORD` | _(empty)_ | HTTP Basic Authentication password. Leave empty to disable authentication. |
+| `OPENCODE_MAX_RETRIES` | `3` | Maximum number of retry attempts for failed requests (applies to `429`, `5xx`, and connection errors). |
+| `OPENCODE_AUTO_START` | `true` | When `true`, automatically spawns `opencode serve` if no server is reachable. Set to `false` in managed environments. |
+| `OPENCODE_AUTO_START_PORT` | `4096` | Port number for the automatically provisioned OpenCode server. |
 
-### Auto-Start Behavior
+### Automatic Server Provisioning
 
-When `OPENCODE_AUTO_START=true` (default), the server will:
+When `OPENCODE_AUTO_START=true` (default):
 
-1. **At startup**: Perform a non-blocking health check. If OpenCode is not reachable, log a warning and proceed.
-2. **On first tool call**: If OpenCode is still not reachable, spawn `opencode serve --port 4096` via `@opencode-ai/sdk` and wait for it to become healthy.
-3. **On shutdown**: Terminate the managed OpenCode process via `SIGINT`/`SIGTERM` handlers.
+1. **At startup** — Performs a non-blocking health check. If the server is unreachable, logs a diagnostic message and continues initialization.
+2. **On first tool invocation** — If the server remains unreachable, spawns `opencode serve` via `@opencode-ai/sdk` and waits for it to report healthy status.
+3. **On shutdown** — Terminates any managed OpenCode process via registered signal handlers.
 
-Set `OPENCODE_AUTO_START=false` in production environments where you manage OpenCode externally (e.g., via systemd, Docker, or Kubernetes).
+Set `OPENCODE_AUTO_START=false` when OpenCode is managed externally (e.g., via systemd, Docker, or Kubernetes).
 
-## Exposed MCP Tools
+## Available Tools
 
-The target language models connecting to this MCP will be granted these 11 tools:
+This server exposes 11 tools to connected MCP clients:
 
-| Tool | Arguments | Description |
-|------|-----------|-------------|
-| `opencode_ask_sync` | `task`, `agent?`, `model?` | Forward tasks blocking until resolution. Polls internally for completion. |
-| `opencode_ask_async` | `task`, `agent?`, `model?` | Launch tasks without blocking, returns a Session ID immediately. |
-| `opencode_get_session` | `sessionId`, `limit?` | Poll for swarm completion and read output context trails. |
-| `opencode_run_shell` | `command`, `agent`, `sessionId?` | Invoke shell commands autonomously (requires agent ID). |
-| `opencode_list_agents` | _(none)_ | List available agent profiles inside OpenCode. |
-| `opencode_list_providers` | _(none)_ | Poll available model/provider capabilities. |
-| `opencode_get_config` | _(none)_ | Get the global OpenCode config (model, variant, agent). |
-| `opencode_set_config` | `config` | Update the global config dynamically (e.g., rotate models). |
-| `opencode_health_check` | _(none)_ | Query OpenCode server health status (bypasses cache). |
-| `opencode_abort_session` | `sessionId` | Forcefully abort a hanging background session. |
-| `opencode_delete_session` | `sessionId` | Hard-delete a completed or running session. |
+| Tool | Parameters | Description |
+|------|------------|-------------|
+| `opencode_ask_sync` | `task`, `agent?`, `model?` | Submit a task and block until the agent completes execution. |
+| `opencode_ask_async` | `task`, `agent?`, `model?` | Submit a task for background execution. Returns a session ID immediately. |
+| `opencode_get_session` | `sessionId`, `limit?` | Retrieve session details, status, and recent messages. |
+| `opencode_run_shell` | `command`, `agent`, `sessionId?` | Execute a shell command within an OpenCode session workspace. |
+| `opencode_list_agents` | _(none)_ | List all available agent profiles. |
+| `opencode_list_providers` | _(none)_ | List all configured LLM providers and models. |
+| `opencode_get_config` | _(none)_ | Retrieve the current global configuration (active model, variant, agent). |
+| `opencode_set_config` | `config` | Update global configuration parameters (e.g., switch the active model). |
+| `opencode_health_check` | _(none)_ | Query the server health endpoint. Always performs a fresh check, bypassing the cache. |
+| `opencode_abort_session` | `sessionId` | Abort a running or unresponsive session. |
+| `opencode_delete_session` | `sessionId` | Permanently delete a session and its associated data. |
 
 ## Usage Examples
 
@@ -117,19 +123,19 @@ The target language models connecting to this MCP will be granted these 11 tools
 }
 ```
 
-### Running a Synchronous Query
+### Synchronous Task Execution
 
 ```json
 {
   "name": "opencode_ask_sync",
   "arguments": {
-    "task": "Explain the architecture of the src/auth module",
+    "task": "Analyze the architecture of the src/auth module and provide recommendations",
     "agent": "oracle"
   }
 }
 ```
 
-### Executing a Shell Command
+### Remote Shell Execution
 
 ```json
 {
@@ -141,7 +147,7 @@ The target language models connecting to this MCP will be granted these 11 tools
 }
 ```
 
-### Dynamically Switching Models
+### Dynamic Model Configuration
 
 ```json
 {
@@ -155,7 +161,7 @@ The target language models connecting to this MCP will be granted these 11 tools
 }
 ```
 
-### Monitoring an Async Task
+### Session Status Monitoring
 
 ```json
 {
@@ -167,13 +173,13 @@ The target language models connecting to this MCP will be granted these 11 tools
 }
 ```
 
-## IDE Configuration
+## IDE Integration
 
-To use the OpenCode MCP Server in your preferred AI-powered IDE, configure it as an MCP server. You will need to provide the absolute path to `src/index.ts`.
+Configure the server as an MCP tool provider in your preferred IDE. Provide the absolute path to `src/index.ts` or the compiled binary.
 
 ### Claude Desktop
 
-Add the following to your `claude_desktop_config.json`:
+Add to `claude_desktop_config.json`:
 
 ```json
 {
@@ -189,9 +195,9 @@ Add the following to your `claude_desktop_config.json`:
 }
 ```
 
-### Antigravity (Gemini Code Assist)
+### Gemini Code Assist / Antigravity
 
-Add to your workspace or global MCP settings:
+Add to your workspace or global MCP configuration:
 
 ```json
 {
@@ -206,16 +212,15 @@ Add to your workspace or global MCP settings:
 
 ### Cursor
 
-1. Open Cursor Settings.
-2. Go to **Features** > **MCP Servers** (or "MCP" tab).
-3. Add a new server:
+1. Navigate to **Settings** → **Features** → **MCP Servers**.
+2. Add a new server:
    - **Type**: `stdio`
    - **Name**: `opencode`
    - **Command**: `bun run /absolute/path/to/opencode-mcp/src/index.ts`
 
 ### Windsurf
 
-Add the following to your `mcp_config.json`:
+Add to `mcp_config.json`:
 
 ```json
 {
@@ -228,9 +233,9 @@ Add the following to your `mcp_config.json`:
 }
 ```
 
-### Using the Pre-Built Binary
+### Using the Compiled Binary
 
-For any IDE, you can also use the pre-compiled binary instead of `bun run`:
+For any IDE, the pre-compiled binary may be used in place of `bun run`:
 
 ```json
 {
@@ -244,62 +249,60 @@ For any IDE, you can also use the pre-compiled binary instead of `bun run`:
 
 ## Architecture
 
-```
-┌─────────────┐     stdio      ┌────────────────────┐     HTTP      ┌─────────────────┐
-│  AI IDE     │  ◄──────────►  │  OpenCode MCP      │  ◄─────────►  │  OpenCode API   │
-│  (Claude,   │   JSON-RPC     │  Server             │   REST API    │  (opencode      │
-│   Cursor,   │                │                      │   /session    │   serve)        │
-│   etc.)     │                │  • Auto-start        │   /agent      │                 │
-└─────────────┘                │  • Health cache      │   /config     └─────────────────┘
-                               │  • Retry logic       │   /provider         ▲
-                               │  • Lifecycle mgmt    │                     │
-                               └────────────────────┘      Auto-spawned
-                                                           if not running
+```text
+┌─────────────┐     stdio      ┌──────────────────────┐     HTTP      ┌─────────────────┐
+│  AI IDE     │  ◄──────────►  │  OpenCode MCP        │  ◄─────────►  │  OpenCode API   │
+│  (Claude,   │   JSON-RPC     │  Server               │   REST API    │  (opencode      │
+│   Cursor,   │                │                        │   /session    │   serve)        │
+│   etc.)     │                │  • Auto-provisioning   │   /agent      │                 │
+└─────────────┘                │  • Health cache        │   /config     └─────────────────┘
+                               │  • Retry with backoff  │   /provider         ▲
+                               │  • Lifecycle mgmt      │                     │
+                               └──────────────────────┘   Auto-provisioned
+                                                          when unavailable
 ```
 
-## Running Tests
-
-Zero-configuration testing out of the box with `bun test`. Test suites cover 100% of active logic paths.
+## Testing
 
 ```bash
-# Unit tests + coverage
+# Run unit tests with coverage reporting
 bun test --coverage
 
-# Type checking
+# Run static type analysis
 bun run typecheck
 
-# E2E tests (requires Podman or a running OpenCode instance)
+# Run end-to-end tests (requires Podman or a running OpenCode instance)
 OPENCODE_SERVER_URL=http://127.0.0.1:4096 bun test
 ```
 
 ## Troubleshooting
 
-### `ECONNREFUSED` on port 4096
+### `ECONNREFUSED` on Port 4096
 
-**Cause**: OpenCode's HTTP API is not running.
+**Cause**: The OpenCode HTTP API server is not running on the expected port.
 
-**Fix**: Either enable auto-start (default) or start OpenCode manually:
+**Resolution**: Enable automatic server provisioning (default behavior) or start OpenCode manually:
 
 ```bash
 opencode serve --port 4096
 ```
 
-### Auto-start fails
+### Automatic Provisioning Failure
 
-**Cause**: `opencode` CLI is not in `PATH` or not installed.
+**Cause**: The `opencode` CLI is not installed or not available in the system `PATH`.
 
-**Fix**: Install OpenCode and ensure it's accessible:
+**Resolution**: Verify the OpenCode installation:
 
 ```bash
-which opencode        # Should return a path
-opencode --version    # Should return version ≥ 1.2
+which opencode        # Should return a valid path
+opencode --version    # Should return version 1.2 or later
 ```
 
-### Health check timeouts
+### Health Check Timeout
 
-**Cause**: OpenCode is under heavy load or network issues.
+**Cause**: The OpenCode server is experiencing high load or network connectivity issues.
 
-**Fix**: Increase retry ceiling:
+**Resolution**: Increase the retry limit:
 
 ```bash
 OPENCODE_MAX_RETRIES=5 bun run start

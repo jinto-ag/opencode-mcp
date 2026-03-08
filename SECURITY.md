@@ -2,12 +2,17 @@
 
 ## Supported Versions
 
-Currently, only the latest release is supported with security updates.
+Security updates are provided for the latest release only.
 
 | Version | Supported          |
 | ------- | ------------------ |
-| v1      | :white_check_mark: |
+| 1.x     | :white_check_mark: |
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability within this project, please DO NOT explicitly disclose it on the public issue tracker. Instead, please report it privately to the maintainers by opening a GitHub Security Advisory directly on the repository or via email. We will address it immediately and prepare a patch release.
+If you discover a security vulnerability in this project, **do not** disclose it via the public issue tracker. Instead, report it privately through one of the following channels:
+
+- **GitHub Security Advisories**: Open a [Security Advisory](https://github.com/jinto-ag/opencode-mcp/security/advisories/new) directly on the repository.
+- **Email**: Contact the maintainers at the email address listed in the repository profile.
+
+All reported vulnerabilities will be investigated promptly. A patch release will be prepared and published as soon as a fix is validated.

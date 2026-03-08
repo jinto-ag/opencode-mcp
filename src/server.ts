@@ -57,7 +57,7 @@ export class OpenCodeMcpServer {
 
     this.apiClient = axios.create({
       baseURL: config.url,
-      timeout: 0, // Disable timeout for long-running agent tasks
+      timeout: 0, // No global timeout; individual endpoints set their own as needed
     });
 
     if (config.password) {
@@ -67,7 +67,7 @@ export class OpenCodeMcpServer {
       };
     }
 
-    // Rate Exceed & Connection resilience setup
+    // Retry policy: handles rate limits, server errors, and transient connection failures
     axiosRetry(this.apiClient, {
       retries: config.maxRetries || 3,
       retryDelay: axiosRetry.exponentialDelay,
@@ -164,7 +164,7 @@ export class OpenCodeMcpServer {
 
   /**
    * Validates that the OpenCode server is accessible.
-   * Uses a TTL-based cache to avoid hammering on every tool call.
+   * Results are cached with a configurable TTL to minimize redundant network requests.
    */
   async checkOpencodeHealth() {
     // Return cached result if still fresh
@@ -204,7 +204,7 @@ export class OpenCodeMcpServer {
     }
   }
 
-  /** Invalidate the health cache (useful for testing or after errors). */
+  /** Invalidates the health check cache, forcing a fresh validation on next check. */
   invalidateHealthCache() {
     this.lastHealthCheck = null;
   }
@@ -378,12 +378,15 @@ export class OpenCodeMcpServer {
       this.logError(`${logPrefix} Executing tool request...`, args);
 
       try {
-        // Ensure OpenCode is running (auto-starts if needed, uses cached health)
+        // Validate server availability (auto-provisions if configured, uses cached health state)
         await this.ensureOpenCodeRunning();
         this.logError(`${logPrefix} OpenCode server is available.`);
 
         if (toolName === "opencode_ask_sync") {
           const { task, agent, model } = args;
+          if (!task || typeof task !== "string" || task.trim().length === 0) {
+            throw new Error("Validation error: 'task' is required and must be a non-empty string.");
+          }
           const sessionTitle = `MCP Sync Task: ${task.substring(0, 30)}`;
           const sessionRes = await this.apiClient.post("/session", {
             title: sessionTitle,
@@ -394,13 +397,13 @@ export class OpenCodeMcpServer {
           if (agent) payload.agent = agent;
           if (model) payload.model = model;
 
-          // Start asynchronously to avoid Axios hanging on streaming SSE responses
+          // Dispatch asynchronously to prevent blocking on streaming SSE responses
           await this.apiClient.post(
             `/session/${sessionId}/prompt_async`,
             payload,
           );
 
-          // Poll for completion to give the illusion of sync while preventing Axios network hangups
+          // Poll for completion status to provide synchronous semantics over the async API
           let isRunning = true;
           let attempts = 0;
           let lastStatusObj: any = null;
@@ -439,7 +442,7 @@ export class OpenCodeMcpServer {
             );
             const messages = messageRes.data || [];
 
-            // Extract the last non-empty text part from the latest messages easily
+            // Aggregate text content from the most recent messages
             const textParts = messages
               .map(
                 (m: any) =>
@@ -476,6 +479,9 @@ export class OpenCodeMcpServer {
 
         if (toolName === "opencode_ask_async") {
           const { task, agent, model } = args;
+          if (!task || typeof task !== "string" || task.trim().length === 0) {
+            throw new Error("Validation error: 'task' is required and must be a non-empty string.");
+          }
           const sessionTitle = `MCP Async Task: ${task.substring(0, 30)}`;
           const sessionRes = await this.apiClient.post("/session", {
             title: sessionTitle,
@@ -524,6 +530,12 @@ export class OpenCodeMcpServer {
 
         if (toolName === "opencode_run_shell") {
           const { sessionId, command, agent } = args;
+          if (!command || typeof command !== "string" || command.trim().length === 0) {
+            throw new Error("Validation error: 'command' is required and must be a non-empty string.");
+          }
+          if (!agent || typeof agent !== "string" || agent.trim().length === 0) {
+            throw new Error("Validation error: 'agent' is required and must be a non-empty string.");
+          }
           let targetId = sessionId;
           if (!targetId) {
             const sessionRes = await this.apiClient.post("/session", {
@@ -551,6 +563,9 @@ export class OpenCodeMcpServer {
 
         if (toolName === "opencode_abort_session") {
           const { sessionId } = args;
+          if (!sessionId || typeof sessionId !== "string") {
+            throw new Error("Validation error: 'sessionId' is required and must be a string.");
+          }
           await this.apiClient.post(`/session/${sessionId}/abort`);
           return {
             content: [
@@ -564,6 +579,9 @@ export class OpenCodeMcpServer {
 
         if (toolName === "opencode_delete_session") {
           const { sessionId } = args;
+          if (!sessionId || typeof sessionId !== "string") {
+            throw new Error("Validation error: 'sessionId' is required and must be a string.");
+          }
           await this.apiClient.delete(`/session/${sessionId}`);
           return {
             content: [
@@ -627,6 +645,9 @@ export class OpenCodeMcpServer {
 
         if (toolName === "opencode_set_config") {
           const { config } = args;
+          if (!config || typeof config !== "object") {
+            throw new Error("Validation error: 'config' is required and must be an object.");
+          }
           const configRes = await this.apiClient.patch(`/config`, config);
           return {
             content: [
@@ -638,7 +659,7 @@ export class OpenCodeMcpServer {
           };
         }
 
-        throw new Error(`Unknown tool: ${toolName}`);
+        throw new Error(`Unrecognized tool: ${toolName}`);
       } catch (error: any) {
         // Invalidate cache on any error to force re-check next time
         this.invalidateHealthCache();
