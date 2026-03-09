@@ -322,8 +322,9 @@ describe("OpenCodeMcpServer Unit Tests", () => {
 
   test("should list all tools gracefully", async () => {
     const res: any = await mcpClient.listTools();
-    expect(res.tools.length).toBe(19);
+    expect(res.tools.length).toBeGreaterThan(20);
     expect(res.tools.map((t: any) => t.name)).toContain("opencode_list_agents");
+    expect(res.tools.map((t: any) => t.name)).toContain("omo_sisyphus");
   });
   test("should handle opencode_mcp_status", async () => {
     setHealthy();

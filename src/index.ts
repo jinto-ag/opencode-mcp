@@ -27,6 +27,8 @@ async function main() {
     autoStartPort: OPENCODE_AUTO_START_PORT,
   });
 
+  await opencodeServer.init();
+
   // Register graceful shutdown handlers
   const gracefulShutdown = async (signal: string) => {
     console.error(`\n[OpenCode-MCP] Received ${signal}, shutting down...`);

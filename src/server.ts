@@ -5,6 +5,10 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { createOpencodeServer } from "@opencode-ai/sdk/server";
 import { createOpencodeClient, OpencodeClient } from "@opencode-ai/sdk/client";
+import { OMOConfigManager } from "./orchestrator/config.js";
+import { OMOOrchestrator } from "./orchestrator/omo.js";
+import { OMO_PERSONAS } from "./agents/personas.js";
+import { OMODiscovery } from "./orchestrator/discovery.js";
 
 export interface OpenCodeConfig {
   url: string;
@@ -35,6 +39,10 @@ export class OpenCodeMcpServer {
   private lastHealthCheck: { timestamp: number; data: any } | null = null;
   private readonly healthCacheTtlMs: number;
 
+  private omoConfig: OMOConfigManager;
+  private omo: OMOOrchestrator;
+  private omoDiscovery: OMODiscovery;
+
   constructor(config: OpenCodeConfig) {
     this.config = config;
     this.healthCacheTtlMs = config.healthCacheTtlMs ?? 30_000;
@@ -57,7 +65,16 @@ export class OpenCodeMcpServer {
       headers: authHeader ? { Authorization: authHeader } : undefined,
     });
 
+    this.omoConfig = new OMOConfigManager();
+    this.omoDiscovery = new OMODiscovery();
+    this.omo = new OMOOrchestrator(this.apiClient, this.omoConfig);
+
     this.setupHandlers();
+  }
+
+  async init(): Promise<void> {
+    await this.omoConfig.init();
+    await this.omoDiscovery.discover();
   }
 
   private logError(...args: any[]) {
@@ -165,105 +182,149 @@ export class OpenCodeMcpServer {
 
   private setupHandlers() {
     this.server.setRequestHandler(ListToolsRequestSchema, async () => {
-      return {
-        tools: [
-          {
-            name: "opencode_ask_sync",
-            description: "Delegate a task to OpenCode synchronously.",
-            inputSchema: { type: "object", properties: { task: { type: "string" }, agent: { type: "string" }, model: { type: "string" } }, required: ["task"] },
+      const toolList: any[] = [
+        {
+          name: "opencode_ask_sync",
+          description: "Delegate a task to OpenCode synchronously.",
+          inputSchema: { type: "object", properties: { task: { type: "string" }, agent: { type: "string" }, model: { type: "string" } }, required: ["task"] },
+          discovery: { type: "text", text: "For complex tasks requiring higher accuracy, consider using omo_sisyphus or other omo_ agents." }
+        },
+        {
+          name: "opencode_ask_async",
+          description: "Delegate a task to OpenCode asynchronously. Returns Session ID.",
+          inputSchema: { type: "object", properties: { task: { type: "string" }, agent: { type: "string" }, model: { type: "string" } }, required: ["task"] },
+        },
+        {
+          name: "opencode_get_session",
+          description: "Fetch details of an OpenCode session.",
+          inputSchema: { type: "object", properties: { sessionId: { type: "string" }, limit: { type: "number" } }, required: ["sessionId"] },
+        },
+        {
+          name: "opencode_run_shell",
+          description: "Run a shell command autonomously.",
+          inputSchema: { type: "object", properties: { sessionId: { type: "string" }, command: { type: "string" }, agent: { type: "string" } }, required: ["command", "agent"] },
+        },
+        {
+          name: "opencode_abort_session",
+          description: "Abort a session.",
+          inputSchema: { type: "object", properties: { sessionId: { type: "string" } }, required: ["sessionId"] },
+        },
+        {
+          name: "opencode_delete_session",
+          description: "Delete a session.",
+          inputSchema: { type: "object", properties: { sessionId: { type: "string" } }, required: ["sessionId"] },
+        },
+        {
+          name: "opencode_list_agents",
+          description: "List available agents.",
+          inputSchema: { type: "object", properties: {} },
+        },
+        {
+          name: "opencode_list_providers",
+          description: "List providers and models.",
+          inputSchema: { type: "object", properties: {} },
+        },
+        {
+          name: "opencode_health_check",
+          description: "Check server health.",
+          inputSchema: { type: "object", properties: {} },
+        },
+        {
+          name: "opencode_get_config",
+          description: "Get global OpenCode config.",
+          inputSchema: { type: "object", properties: {} },
+        },
+        {
+          name: "opencode_set_config",
+          description: "Update global OpenCode config.",
+          inputSchema: { type: "object", properties: { config: { type: "object" } }, required: ["config"] },
+        },
+        {
+          name: "opencode_session_diff",
+          description: "Get the diff for a session.",
+          inputSchema: { type: "object", properties: { sessionId: { type: "string" }, messageId: { type: "string" } }, required: ["sessionId"] },
+        },
+        {
+          name: "opencode_session_fork",
+          description: "Fork a session.",
+          inputSchema: { type: "object", properties: { sessionId: { type: "string" }, messageId: { type: "string" } }, required: ["sessionId"] },
+        },
+        {
+          name: "opencode_session_revert",
+          description: "Revert a session's workspace.",
+          inputSchema: { type: "object", properties: { sessionId: { type: "string" }, messageId: { type: "string" } }, required: ["sessionId", "messageId"] },
+        },
+        // OMO Native Orchestration Tools
+        {
+          name: "omo_sisyphus",
+          description: "Run a high-accuracy Plan -> Execute -> Verify loop for complex tasks.",
+          inputSchema: { type: "object", properties: { task: { type: "string" }, model: { type: "string" } }, required: ["task"] },
+        },
+        {
+          name: "omo_get_config",
+          description: "Get the current oh-my-opencode native orchestration configuration.",
+          inputSchema: { type: "object", properties: {} },
+        },
+        {
+          name: "omo_set_config",
+          description: "Update the oh-my-opencode native orchestration configuration.",
+          inputSchema: { 
+            type: "object", 
+            properties: { 
+              fallbackModels: { type: "array", items: { type: "string" } },
+              maxRetries: { type: "number" },
+              sisyphusMaxLoops: { type: "number" },
+              ulwMaxIterations: { type: "number" },
+              ralphMaxIterations: { type: "number" },
+              accuracyThreshold: { type: "number" }
+            } 
           },
-          {
-            name: "opencode_ask_async",
-            description: "Delegate a task to OpenCode asynchronously. Returns Session ID.",
-            inputSchema: { type: "object", properties: { task: { type: "string" }, agent: { type: "string" }, model: { type: "string" } }, required: ["task"] },
+        },
+        {
+          name: "opencode_list_commands",
+          description: "List available native commands.",
+          inputSchema: { type: "object", properties: {} },
+        },
+        {
+          name: "opencode_execute_command",
+          description: "Execute a native command.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              command: { type: "string", description: "The name of the command to execute." },
+              args: { type: "object", description: "Arguments for the command as a JSON object." },
+              sessionId: { type: "string", description: "Optional session ID to execute the command within." },
+            },
+            required: ["command"],
           },
-          {
-            name: "opencode_get_session",
-            description: "Fetch details of an OpenCode session.",
-            inputSchema: { type: "object", properties: { sessionId: { type: "string" }, limit: { type: "number" } }, required: ["sessionId"] },
-          },
-          {
-            name: "opencode_run_shell",
-            description: "Run a shell command autonomously.",
-            inputSchema: { type: "object", properties: { sessionId: { type: "string" }, command: { type: "string" }, agent: { type: "string" } }, required: ["command", "agent"] },
-          },
-          {
-            name: "opencode_abort_session",
-            description: "Abort a session.",
-            inputSchema: { type: "object", properties: { sessionId: { type: "string" } }, required: ["sessionId"] },
-          },
-          {
-            name: "opencode_delete_session",
-            description: "Delete a session.",
-            inputSchema: { type: "object", properties: { sessionId: { type: "string" } }, required: ["sessionId"] },
-          },
-          {
-            name: "opencode_list_agents",
-            description: "List available agents.",
-            inputSchema: { type: "object", properties: {} },
-          },
-          {
-            name: "opencode_list_providers",
-            description: "List providers and models.",
-            inputSchema: { type: "object", properties: {} },
-          },
-          {
-            name: "opencode_health_check",
-            description: "Check server health.",
-            inputSchema: { type: "object", properties: {} },
-          },
-          {
-            name: "opencode_get_config",
-            description: "Get global OpenCode config.",
-            inputSchema: { type: "object", properties: {} },
-          },
-          {
-            name: "opencode_set_config",
-            description: "Update global OpenCode config.",
-            inputSchema: { type: "object", properties: { config: { type: "object" } }, required: ["config"] },
-          },
-          {
-            name: "opencode_mcp_status",
-            description: "Get status of configured MCP servers in OpenCode.",
-            inputSchema: { type: "object", properties: {} },
-          },
-          {
-            name: "opencode_mcp_add",
-            description: "Dynamically add an MCP server to OpenCode.",
-            inputSchema: { type: "object", properties: { name: { type: "string" }, config: { type: "object" } }, required: ["name", "config"] },
-          },
-          {
-            name: "opencode_mcp_remove",
-            description: "Remove an MCP server by name.",
-            inputSchema: { type: "object", properties: { name: { type: "string" } }, required: ["name"] },
-          },
-          {
-            name: "opencode_pty_create",
-            description: "Create a new PTY (pseudo-terminal) session.",
-            inputSchema: { type: "object", properties: { cols: { type: "number" }, rows: { type: "number" }, cwd: { type: "string" } }, required: [] },
-          },
-          {
-            name: "opencode_pty_list",
-            description: "List all active PTY sessions.",
-            inputSchema: { type: "object", properties: {} },
-          },
-          {
-            name: "opencode_session_diff",
-            description: "Get the diff for a session.",
-            inputSchema: { type: "object", properties: { sessionId: { type: "string" }, messageId: { type: "string" } }, required: ["sessionId"] },
-          },
-          {
-            name: "opencode_session_fork",
-            description: "Fork a session.",
-            inputSchema: { type: "object", properties: { sessionId: { type: "string" }, messageId: { type: "string" } }, required: ["sessionId"] },
-          },
-          {
-            name: "opencode_session_revert",
-            description: "Revert a session to a specific message ID.",
-            inputSchema: { type: "object", properties: { sessionId: { type: "string" }, messageId: { type: "string" } }, required: ["sessionId", "messageId"] },
-          },
-        ],
-      };
+        },
+        {
+          name: "omo_refresh_discovery",
+          description: "Reload available OMO agents from native config.",
+          inputSchema: { type: "object", properties: {} },
+        }
+      ];
+
+      const personas = await this.omoDiscovery.getAvailableAgents();
+      for (const [key, persona] of Object.entries(personas)) {
+        if (key === "sisyphus") continue;
+        toolList.push({
+          name: `omo_${key}`,
+          description: `Run the ${persona.name} agent: ${persona.description}`,
+          inputSchema: {
+            type: "object",
+            properties: {
+              task: { type: "string" },
+              model: { type: "string" },
+              sessionId: { type: "string" },
+              mode: { type: "string", enum: ["normal", "ulw", "ralph"], default: "normal" }
+            },
+            required: ["task"]
+          }
+        });
+      }
+
+      return { tools: toolList };
     });
 
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
@@ -331,6 +392,11 @@ export class OpenCodeMcpServer {
             } else if (lastStatusObj && typeof lastStatusObj === "object" && lastStatusObj.message) {
               summary = `Task stopped. Status: ${lastStatusObj.type} - ${lastStatusObj.message}`;
             }
+
+            // Accuracy Discovery Hint
+            summary += "\n\n---\n💡 *Tip: For complex engineering tasks requiring higher accuracy, try using the high-accuracy orchestrator tool: `omo_sisyphus`.*";
+
+            return { content: [{ type: "text", text: `Session ID: ${sessionId}\n\nAgent Response:\n${summary}` }] };
           } catch (e) {
             this.logError(`${logPrefix} Error fetching final messages:`, e);
           }
@@ -501,6 +567,84 @@ export class OpenCodeMcpServer {
             throwOnError: true
           });
           return { content: [{ type: "text", text: `Session Reverted to ${messageId}:\n${JSON.stringify(res.data, null, 2)}` }] };
+        }
+
+        // --- OMO Native Orchestration Tools ---
+
+        if (toolName === "omo_sisyphus") {
+          const { task, model } = args;
+          if (!task || typeof task !== "string") throw new Error("task required");
+          const result = await this.omo.runSisyphusTask(task, model);
+          return { content: [{ type: "text", text: result }] };
+        }
+
+        if (toolName === "omo_get_config") {
+          const config = this.omoConfig.get();
+          return { content: [{ type: "text", text: JSON.stringify(config, null, 2) }] };
+        }
+
+        if (toolName === "omo_set_config") {
+          const newConfig = await this.omoConfig.update(args);
+          return { content: [{ type: "text", text: `OMO Config Updated:\n${JSON.stringify(newConfig, null, 2)}` }] };
+        }
+
+        if (toolName === "opencode_list_commands") {
+          const res = await fetch(`${this.config.url}/command`);
+          if (!res.ok) throw new Error(`Failed to fetch commands: ${res.status}`);
+          const commands = await res.json() as Array<{name: string, description: string, source: string}>;
+          const formatted = commands.map(c => `- **${c.name}** (${c.source}): ${c.description || 'No description'}`).join('\n');
+          return { content: [{ type: "text", text: `Available Commands & Skills:\n\n${formatted}` }] };
+        }
+
+        if (toolName === "opencode_execute_command") {
+          let sessionId = args.sessionId;
+          
+          if (!sessionId) {
+            const sessRes = await fetch(`${this.config.url}/session`, { method: "POST" });
+            if (!sessRes.ok) throw new Error("Failed to create session");
+            sessionId = ((await sessRes.json()) as any).id;
+          }
+          
+          const execRes = await fetch(`${this.config.url}/session/${sessionId}/command`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              command: args.command,
+              arguments: args.args,
+              agent: args.agent,
+              model: args.model
+            })
+          });
+
+          if (!execRes.ok) {
+              const body = await execRes.text();
+              throw new Error(`Command execution failed: ${body}`);
+          }
+
+          return { content: [{ type: "text", text: `Command successfully executed in session ${sessionId}.` }] };
+        }
+
+        if (toolName === "omo_refresh_discovery") {
+          await this.omoDiscovery.discover();
+          return { content: [{ type: "text", text: "OMO Discovery refreshed. New agents and commands reloaded." }] };
+        }
+
+        if (toolName.startsWith("omo_")) {
+          const personaName = toolName.replace("omo_", "");
+          const personas = await this.omoDiscovery.getAvailableAgents();
+          const persona = personas[personaName];
+          if (!persona) throw new Error(`Unknown OMO agent: ${personaName}`);
+
+          const { task, model, sessionId, mode } = args;
+          if (!task || typeof task !== "string") throw new Error("task required");
+
+          const result = await this.omo.runAgentWithMode(task, persona, mode || "normal", model, sessionId);
+          return { 
+            content: [{ 
+              type: "text", 
+              text: `[OMO Agent: ${persona.name}] Mode: ${mode || "normal"}\n\nResult:\n${result}` 
+            }] 
+          };
         }
 
         throw new Error(`Unrecognized tool: ${toolName}`);

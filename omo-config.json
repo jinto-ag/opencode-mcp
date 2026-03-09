@@ -1,0 +1,17 @@
+{
+  "fallbackModels": [
+    "gpt-4o",
+    "claude-3-5-sonnet",
+    "gemini-1.5-pro",
+    "gpt-4o-mini"
+  ],
+  "maxRetries": 3,
+  "accuracyThreshold": 0.8,
+  "sisyphusMaxLoops": 5,
+  "monitoredProviders": [
+    "opencode",
+    "openai",
+    "anthropic",
+    "google"
+  ]
+}
