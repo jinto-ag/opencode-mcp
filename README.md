@@ -7,7 +7,7 @@
 
 A production-ready [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server that integrates AI-powered IDEs with [OpenCode](https://github.com/anomalyco/opencode) agents. Supports multi-agent delegation, dynamic model selection, rate-limit mitigation, and resilient connection management.
 
-Built with [Bun](https://bun.sh), [`@modelcontextprotocol/sdk`](https://www.npmjs.com/package/@modelcontextprotocol/sdk), and [`@opencode-ai/sdk`](https://www.npmjs.com/package/@opencode-ai/sdk). Validated at 100% line coverage.
+Built with [Bun](https://bun.sh), [`@modelcontextprotocol/sdk`](https://www.npmjs.com/package/@modelcontextprotocol/sdk), and the official [`@opencode-ai/sdk`](https://www.npmjs.com/package/@opencode-ai/sdk) v2. Validated at 100% line coverage.
 
 ## Key Capabilities
 
@@ -93,7 +93,7 @@ Set `OPENCODE_AUTO_START=false` when OpenCode is managed externally (e.g., via s
 
 ## Available Tools
 
-This server exposes 11 tools to connected MCP clients:
+This server exposes 19 tools to connected MCP clients:
 
 | Tool | Parameters | Description |
 |------|------------|-------------|
@@ -103,11 +103,20 @@ This server exposes 11 tools to connected MCP clients:
 | `opencode_run_shell` | `command`, `agent`, `sessionId?` | Execute a shell command within an OpenCode session workspace. |
 | `opencode_list_agents` | _(none)_ | List all available agent profiles. |
 | `opencode_list_providers` | _(none)_ | List all configured LLM providers and models. |
-| `opencode_get_config` | _(none)_ | Retrieve the current global configuration (active model, variant, agent). |
+| `opencode_get_config` | _(none)_ | Retrieve the current global configuration. |
 | `opencode_set_config` | `config` | Update global configuration parameters (e.g., switch the active model). |
-| `opencode_health_check` | _(none)_ | Query the server health endpoint. Always performs a fresh check, bypassing the cache. |
+| `opencode_health_check` | _(none)_ | Query the server health endpoint (bypassing cache). |
 | `opencode_abort_session` | `sessionId` | Abort a running or unresponsive session. |
-| `opencode_delete_session` | `sessionId` | Permanently delete a session and its associated data. |
+| `opencode_delete_session` | `sessionId` | Permanently delete a session. |
+| **Advanced Tools** | | |
+| `opencode_mcp_status` | _(none)_ | List all MCP servers configured within OpenCode. |
+| `opencode_mcp_add` | `name`, `config` | Dynamically add a new MCP server to OpenCode. |
+| `opencode_mcp_remove` | `name` | Remove a configured MCP server by name. |
+| `opencode_pty_create` | `cols?`, `rows?`, `cwd?`| Create a persistent PTY (pseudo-terminal) session. |
+| `opencode_pty_list` | _(none)_ | List all active PTY sessions. |
+| `opencode_session_diff` | `sessionId`, `messageId?`| Get a file-system diff for a session state. |
+| `opencode_session_fork` | `sessionId`, `messageId?`| Create a new session forked from a specific point in history. |
+| `opencode_session_revert` | `sessionId`, `messageId`| Revert a session's workspace to a specific message ID. |
 
 ## Usage Examples
 
@@ -171,6 +180,46 @@ This server exposes 11 tools to connected MCP clients:
     "limit": 20
   }
 }
+
+### Forking a Session (Revision Control)
+
+```json
+{
+  "name": "opencode_session_fork",
+  "arguments": {
+    "sessionId": "original-session-id",
+    "messageId": "msg-456"
+  }
+}
+```
+
+### Managing PTY Terminals
+
+```json
+{
+  "name": "opencode_pty_create",
+  "arguments": {
+    "cols": 120,
+    "rows": 40,
+    "cwd": "/home/user/project"
+  }
+}
+```
+
+### Dynamic MCP Chaining
+
+```json
+{
+  "name": "opencode_mcp_add",
+  "arguments": {
+    "name": "mysql-mcp",
+    "config": {
+      "command": "npx",
+      "args": ["@modelcontextprotocol/server-mysql", "mysql://..."]
+    }
+  }
+}
+```
 ```
 
 ## IDE Integration
