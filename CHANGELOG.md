@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.1] - 2026-03-09
+
+### Fixed
+
+- **Version Sync**: Corrected the hardcoded server version reported to MCP clients to match `package.json`.
+
 ## [1.2.0] - 2026-03-09
 
 ### Added

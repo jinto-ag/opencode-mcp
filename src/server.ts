@@ -49,7 +49,7 @@ export class OpenCodeMcpServer {
     this.healthCacheTtlMs = config.healthCacheTtlMs ?? 30_000;
 
     this.server = new Server(
-      { name: "opencode-mcp-server", version: "1.0.0" },
+      { name: "opencode-mcp-server", version: "1.2.1" },
       { capabilities: { tools: {} } },
     );
 
