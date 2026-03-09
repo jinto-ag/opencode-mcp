@@ -4,7 +4,9 @@
   "description": "MCP server for integrating AI-powered IDEs with OpenCode agents. Supports multi-agent delegation, auto-start, and resilient connections.",
   "module": "src/index.ts",
   "type": "module",
-  "private": true,
+  "bin": {
+    "opencode-mcp": "./src/index.ts"
+  },
   "author": "Jinto AG",
   "license": "MIT",
   "keywords": [
