@@ -92,14 +92,18 @@ describe("OpenCodeMcpServer E2E Tests", () => {
     }
   }, 10000);
 
-  test("should pass health check", async () => {
-    const healthRes: any = await mcpClient.callTool({
-      name: "opencode_health_check",
-      arguments: {},
-    });
-    expect(healthRes.isError).toBeUndefined();
-    expect(healthRes.content[0].text).toContain("true");
-  });
+  test(
+    "should pass health check",
+    async () => {
+      const health: any = await mcpClient.callTool({
+        name: "opencode_health_check",
+        arguments: {},
+      });
+      expect(health.content[0].text).toContain("Status: Healthy");
+      expect(health.content[0].text).toContain("Agents:");
+    },
+    10000
+  );
 
   test("should get OpenCode config", async () => {
     const configRes: any = await mcpClient.callTool({

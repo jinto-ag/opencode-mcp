@@ -12,6 +12,12 @@ export class ResilienceEngine {
     private configManager: OMOConfigManager
   ) {}
 
+  private logError(...args: any[]) {
+    if (process.env.NODE_ENV !== "test") {
+      console.error(...args);
+    }
+  }
+
   /**
    * Executes an SDK call with resilience (retries + fallback rotation).
    */
@@ -44,11 +50,11 @@ export class ResilienceEngine {
             if (retryCount < config.maxRetries) {
               retryCount++;
               const delay = Math.pow(2, retryCount) * 1000 + Math.random() * 1000;
-              console.error(`[Resilience] Error with ${model}. Retrying in ${Math.round(delay)}ms... (${retryCount}/${config.maxRetries})`);
+              this.logError(`[Resilience] Error with ${model}. Retrying in ${Math.round(delay)}ms... (${retryCount}/${config.maxRetries})`);
               await new Promise(r => setTimeout(r, delay));
               continue;
             } else {
-              console.error(`[Resilience] ${model} exhausted retries. Rotating to next model in chain...`);
+              this.logError(`[Resilience] ${model} exhausted retries. Rotating to next model in chain...`);
               break; // Rotate to next model
             }
           }

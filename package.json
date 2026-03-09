@@ -1,6 +1,6 @@
 {
   "name": "opencode-mcp",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "MCP server for integrating AI-powered IDEs with OpenCode agents. Supports multi-agent delegation, auto-start, and resilient connections.",
   "module": "src/index.ts",
   "type": "module",
@@ -44,6 +44,7 @@
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@opencode-ai/sdk": "^1.2.21",
     "dotenv": "^17.3.1",
+    "execa": "^9.6.1",
     "lodash-es": "^4.17.23"
   }
 }

@@ -254,7 +254,7 @@ describe("OpenCodeMcpServer Unit Tests", () => {
     });
 
     expect(res.isError).toBeUndefined();
-    expect(res.content[0].text).toContain("true");
+    expect(res.content[0].text).toContain("Status: Healthy");
   });
 
   test("should get opencode config", async () => {
@@ -670,7 +670,7 @@ describe("Health Check Cache", () => {
       arguments: {},
     });
     expect(healthRes.isError).toBeUndefined();
-    expect(healthRes.content[0].text).toContain("true");
+    expect(healthRes.content[0].text).toContain("Status: Healthy");
     expect(callCount).toBe(2); // health_check bypassed cache
   });
 });

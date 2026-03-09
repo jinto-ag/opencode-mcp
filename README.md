@@ -28,6 +28,9 @@ Built with [Bun](https://bun.sh), [`@modelcontextprotocol/sdk`](https://www.npmj
 | **Dynamic Model Selection** | Switch the active LLM model at runtime via `opencode_set_config` — useful for routing complex tasks to larger models. |
 | **Rate-Limit Mitigation** | Integrates `axios-retry` with exponential backoff for `429 Too Many Requests`, `5xx` server errors, and transient network failures. |
 | **Remote Shell Execution** | Executes shell commands within OpenCode session workspaces via `opencode_run_shell`. |
+| **Native Command Access** | Directly execute OpenCode native commands like `ulw-loop` or `raph-loop` via `opencode_execute_command`. |
+| **Skill Management** | Discover and install community skills from the OpenCode registry via `opencode_manage_skills`. |
+| **Resilient Core** | Native support for model rotation, automatic retries, and high-accuracy task verification loops. |
 | **Comprehensive Test Coverage** | Ships with unit tests and end-to-end tests at 100% line coverage. |
 
 ## Prerequisites
@@ -93,7 +96,7 @@ Set `OPENCODE_AUTO_START=false` when OpenCode is managed externally (e.g., via s
 
 ## Available Tools
 
-This server exposes 19 tools to connected MCP clients:
+This server exposes **32 tools** to connected MCP clients:
 
 | Tool | Parameters | Description |
 |------|------------|-------------|
@@ -108,6 +111,14 @@ This server exposes 19 tools to connected MCP clients:
 | `opencode_health_check` | _(none)_ | Query the server health endpoint (bypassing cache). |
 | `opencode_abort_session` | `sessionId` | Abort a running or unresponsive session. |
 | `opencode_delete_session` | `sessionId` | Permanently delete a session. |
+| **Multi-Agent & OMO** | | |
+| `omo_sisyphus` | `task`, `model?` | High-accuracy Plan -> Execute -> Verify loop using Hephaestus and Momus. |
+| `omo_hephaestus` | `task`, `mode?` | Run the Implementation persona with specific mode (`ulw`, `ralph`, `normal`). |
+| `omo_refresh_discovery`| _(none)_ | Reload dynamic agent personas from local config. |
+| **Native Commands** | | |
+| `opencode_list_commands`| _(none)_ | List available native OpenCode commands (built-in + plugins). |
+| `opencode_execute_command`| `command`, `args?` | Execute a native command with arguments in a session. |
+| `opencode_manage_skills`| `action`, `packageName?`| Manage OpenCode skills (find, add, rm, update, ls). |
 | **Advanced Tools** | | |
 | `opencode_mcp_status` | _(none)_ | List all MCP servers configured within OpenCode. |
 | `opencode_mcp_add` | `name`, `config` | Dynamically add a new MCP server to OpenCode. |

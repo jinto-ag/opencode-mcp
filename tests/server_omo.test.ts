@@ -38,6 +38,13 @@ describe("OpenCode MCP Server - OMO Tools", () => {
       { capabilities: {} },
     );
     await mcpClient.connect(transports[0]);
+    
+    // Default mock for health checks to avoid MSW warnings
+    mockServer.use(
+      http.get("*/agent", () => {
+        return HttpResponse.json({ data: { hephaestus: { name: "Hephaestus" } } });
+      })
+    );
   });
 
   const setHealthy = () => {
@@ -88,13 +95,30 @@ describe("OpenCode MCP Server - OMO Tools", () => {
       http.post("*/session", () => HttpResponse.json({ data: { id: "ses_123" } })),
       http.post("*/session/:id/command", () => HttpResponse.json({ data: { info: {} } }))
     );
-
     const result: any = await mcpClient.callTool({
       name: "opencode_execute_command",
       arguments: { command: "ulw-loop", args: "quick task", sessionId: "ses_123" }
     });
 
     expect(result.content[0].text).toContain("Command successfully executed in session ses_123.");
+  });
+  test("opencode_manage_skills tool should work for listing", async () => {
+    const result: any = await mcpClient.callTool({
+      name: "opencode_manage_skills",
+      arguments: { action: "ls", global: true }
+    });
+
+    expect(result.content[0].text).toContain("Success:");
+  });
+
+  test("opencode_manage_skills should handle missing package error", async () => {
+    const result: any = await mcpClient.callTool({
+      name: "opencode_manage_skills",
+      arguments: { action: "find" }
+    });
+    
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("packageName is required");
   });
 
   test("listTools should include dynamic omo agents", async () => {

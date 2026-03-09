@@ -18,6 +18,12 @@ export class OMOOrchestrator {
   ) {
     this.resilience = new ResilienceEngine(client, configManager);
   }
+  
+  private logInfo(...args: any[]) {
+    if (process.env.NODE_ENV !== "test") {
+      console.error(...args);
+    }
+  }
 
   /**
    * Run an agent task with a specific mode (e.g., 'ulw', 'ralph', 'normal').
@@ -70,11 +76,11 @@ export class OMOOrchestrator {
     let lastResult = "";
     let sessionId = existingSessionId;
 
-    console.error(`[OMO-${type}] Starting task with persona ${persona.name}: ${task}`);
+    this.logInfo(`[OMO-${type}] Starting task with persona ${persona.name}: ${task}`);
 
     while (iteration < maxIterations) {
       iteration++;
-      console.error(`[OMO-${type}] Iteration ${iteration}/${maxIterations}`);
+      this.logInfo(`[OMO-${type}] Iteration ${iteration}/${maxIterations}`);
 
       const response = await this.runAgentTask(
         iteration === 1 ? task : continuationPrompt,
@@ -87,7 +93,7 @@ export class OMOOrchestrator {
       sessionId = response.sessionId;
 
       if (this.isTaskComplete(lastResult, config.ralphCompletionMarker)) {
-        console.error(`[OMO-${type}] Task completed on iteration ${iteration}.`);
+        this.logInfo(`[OMO-${type}] Task completed on iteration ${iteration}.`);
         return `[${type}-COMPLETE] Task finished successfully.\n\nSession ID: ${sessionId}\n\nResult:\n${lastResult}`;
       }
     }
@@ -121,11 +127,11 @@ export class OMOOrchestrator {
     let lastResult = "";
     let sessionId: string | undefined;
 
-    console.error(`[OMO-Sisyphus] Starting Task: ${task}`);
+    this.logInfo(`[OMO-Sisyphus] Starting Task: ${task}`);
 
     while (iteration < config.sisyphusMaxLoops) {
       iteration++;
-      console.error(`[OMO-Sisyphus] Iteration ${iteration}/${config.sisyphusMaxLoops}`);
+      this.logInfo(`[OMO-Sisyphus] Iteration ${iteration}/${config.sisyphusMaxLoops}`);
 
       // 1. Implementation Phase (Hephaestus Persona)
       const executionResult = await this.runAgentTask(
@@ -139,7 +145,7 @@ export class OMOOrchestrator {
       sessionId = executionResult.sessionId;
 
       // 2. Verification Phase (Momus Persona)
-      console.error(`[OMO-Sisyphus] Verifying with Momus...`);
+      this.logInfo(`[OMO-Sisyphus] Verifying with Momus...`);
       const verificationResponse = await this.runAgentTask(
         `Critically review the following implementation against the original requirement: "${task}". 
         If it is complete and correct, reply with "PASSED". 
@@ -153,11 +159,11 @@ export class OMOOrchestrator {
       );
 
       if (verificationResponse.content.includes("PASSED")) {
-        console.error(`[OMO-Sisyphus] Verification PASSED on iteration ${iteration}.`);
+        this.logInfo(`[OMO-Sisyphus] Verification PASSED on iteration ${iteration}.`);
         return `[PASSED] Sisyphus successfully completed the task.\n\nSession ID: ${sessionId}\n\nResult:\n${lastResult}`;
       }
 
-      console.error(`[OMO-Sisyphus] Verification failed. Looping back for corrections...`);
+      this.logInfo(`[OMO-Sisyphus] Verification failed. Looping back for corrections...`);
       currentTask = `The previous implementation had issues discovered by Momus. Please fix them:\n\nCritique: ${verificationResponse.content}\n\nPrevious Implementation:\n${lastResult}`;
     }
 

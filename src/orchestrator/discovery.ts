@@ -31,7 +31,9 @@ export class OMODiscovery {
       this.lastChecked = Date.now();
       return this.nativeConfig!;
     } catch (error) {
-      console.error("[OMO-Discovery] Failed to read native OMO config. Using defaults.", error);
+      if (process.env.NODE_ENV !== "test") {
+        console.error("[OMO-Discovery] Failed to read native OMO config. Using defaults.", error);
+      }
       return { agents: {}, categories: {} };
     }
   }

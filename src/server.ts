@@ -9,6 +9,7 @@ import { OMOConfigManager } from "./orchestrator/config.js";
 import { OMOOrchestrator } from "./orchestrator/omo.js";
 import { OMO_PERSONAS } from "./agents/personas.js";
 import { OMODiscovery } from "./orchestrator/discovery.js";
+import { execa } from "execa";
 
 export interface OpenCodeConfig {
   url: string;
@@ -299,6 +300,19 @@ export class OpenCodeMcpServer {
           },
         },
         {
+          name: "opencode_manage_skills",
+          description: "Manage OpenCode skills using the skills CLI (find, add, rm, update, ls).",
+          inputSchema: {
+            type: "object",
+            properties: {
+              action: { type: "string", enum: ["find", "add", "rm", "update", "ls"], description: "The action to perform." },
+              packageName: { type: "string", description: "The package name or search query (required for find, add, rm)." },
+              global: { type: "boolean", description: "Apply globally.", default: true }
+            },
+            required: ["action"],
+          },
+        },
+        {
           name: "omo_refresh_discovery",
           description: "Reload available OMO agents from native config.",
           inputSchema: { type: "object", properties: {} },
@@ -488,7 +502,7 @@ export class OpenCodeMcpServer {
         if (toolName === "opencode_health_check") {
           this.invalidateHealthCache();
           const res = await this.checkOpencodeHealth();
-          return { content: [{ type: "text", text: `Health Status:\n${JSON.stringify(res, null, 2)}` }] };
+          return { content: [{ type: "text", text: `Status: ${res.healthy ? "Healthy" : "Unhealthy"}\nAgents: ${res.agentsCount}` }] };
         }
 
         if (toolName === "opencode_get_config") {
@@ -622,6 +636,32 @@ export class OpenCodeMcpServer {
           }
 
           return { content: [{ type: "text", text: `Command successfully executed in session ${sessionId}.` }] };
+        }
+
+        if (toolName === "opencode_manage_skills") {
+          const { action, packageName, global } = args as { action: string, packageName?: string, global?: boolean };
+          const argsList: string[] = ["--yes", "skills@latest", action];
+          
+          if (["find", "add", "rm"].includes(action)) {
+            if (!packageName) {
+              throw new Error(`packageName is required for action '${action}'`);
+            }
+            argsList.push(packageName);
+          }
+
+          if (global !== false) {
+             argsList.push("-g");
+          }
+          if (["add", "rm"].includes(action)) {
+             argsList.push("-y");
+          }
+
+          try {
+            const { stdout, stderr } = await execa("bunx", argsList);
+            return { content: [{ type: "text", text: `Success:\n${stdout}\n${stderr}`.trim() }] };
+          } catch (e: any) {
+            throw new Error(`Skills CLI failed: ${e.message}\nStdout: ${e.stdout}\nStderr: ${e.stderr}`);
+          }
         }
 
         if (toolName === "omo_refresh_discovery") {
