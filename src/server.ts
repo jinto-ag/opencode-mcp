@@ -222,6 +222,46 @@ export class OpenCodeMcpServer {
             description: "Update global OpenCode config.",
             inputSchema: { type: "object", properties: { config: { type: "object" } }, required: ["config"] },
           },
+          {
+            name: "opencode_mcp_status",
+            description: "Get status of configured MCP servers in OpenCode.",
+            inputSchema: { type: "object", properties: {} },
+          },
+          {
+            name: "opencode_mcp_add",
+            description: "Dynamically add an MCP server to OpenCode.",
+            inputSchema: { type: "object", properties: { name: { type: "string" }, config: { type: "object" } }, required: ["name", "config"] },
+          },
+          {
+            name: "opencode_mcp_remove",
+            description: "Remove an MCP server by name.",
+            inputSchema: { type: "object", properties: { name: { type: "string" } }, required: ["name"] },
+          },
+          {
+            name: "opencode_pty_create",
+            description: "Create a new PTY (pseudo-terminal) session.",
+            inputSchema: { type: "object", properties: { cols: { type: "number" }, rows: { type: "number" }, cwd: { type: "string" } }, required: [] },
+          },
+          {
+            name: "opencode_pty_list",
+            description: "List all active PTY sessions.",
+            inputSchema: { type: "object", properties: {} },
+          },
+          {
+            name: "opencode_session_diff",
+            description: "Get the diff for a session.",
+            inputSchema: { type: "object", properties: { sessionId: { type: "string" }, messageId: { type: "string" } }, required: ["sessionId"] },
+          },
+          {
+            name: "opencode_session_fork",
+            description: "Fork a session.",
+            inputSchema: { type: "object", properties: { sessionId: { type: "string" }, messageId: { type: "string" } }, required: ["sessionId"] },
+          },
+          {
+            name: "opencode_session_revert",
+            description: "Revert a session to a specific message ID.",
+            inputSchema: { type: "object", properties: { sessionId: { type: "string" }, messageId: { type: "string" } }, required: ["sessionId", "messageId"] },
+          },
         ],
       };
     });
@@ -314,6 +354,7 @@ export class OpenCodeMcpServer {
 
         if (toolName === "opencode_get_session") {
           const { sessionId, limit = 10 } = args;
+          if (!sessionId) throw new Error("sessionId required");
           
           const sessionInfo = await this.apiClient.session.get({ path: { id: sessionId }, throwOnError: true });
           const sessionMessages = await this.apiClient.session.messages({ path: { id: sessionId }, query: { limit }, throwOnError: true });
@@ -394,6 +435,72 @@ export class OpenCodeMcpServer {
           if (!config || typeof config !== "object") throw new Error("config object required");
           const res = await this.apiClient.config.update({ body: config, throwOnError: true });
           return { content: [{ type: "text", text: `Config Updated:\n${JSON.stringify(res.data, null, 2)}` }] };
+        }
+
+        if (toolName === "opencode_mcp_status") {
+          const res = await this.apiClient.mcp.status({ throwOnError: true });
+          return { content: [{ type: "text", text: `MCP Servers:\n${JSON.stringify(res.data, null, 2)}` }] };
+        }
+
+        if (toolName === "opencode_mcp_add") {
+          const { name, config: mcpConfig } = args;
+          if (!name || typeof name !== "string") throw new Error("name string required");
+          if (!mcpConfig || typeof mcpConfig !== "object") throw new Error("config object required");
+          const res = await this.apiClient.mcp.add({ body: { name, config: mcpConfig }, throwOnError: true });
+          return { content: [{ type: "text", text: `MCP Server added:\n${JSON.stringify(res.data, null, 2)}` }] };
+        }
+
+        if (toolName === "opencode_mcp_remove") {
+          const { name } = args;
+          if (!name || typeof name !== "string") throw new Error("name string required");
+          const res = await this.apiClient.mcp.auth.remove({ path: { name }, throwOnError: true });
+          return { content: [{ type: "text", text: `MCP Server ${name} removed.` }] };
+        }
+
+        if (toolName === "opencode_pty_create") {
+          const { cols, rows, cwd } = args;
+          const body: any = {};
+          if (cols) body.cols = cols;
+          if (rows) body.rows = rows;
+          if (cwd) body.cwd = cwd;
+
+          const res = await this.apiClient.pty.create({ body, throwOnError: true });
+          return { content: [{ type: "text", text: `PTY Session Created:\n${JSON.stringify(res.data, null, 2)}` }] };
+        }
+
+        if (toolName === "opencode_pty_list") {
+          const res = await this.apiClient.pty.list({ throwOnError: true });
+          return { content: [{ type: "text", text: `PTY Sessions:\n${JSON.stringify(res.data, null, 2)}` }] };
+        }
+
+        if (toolName === "opencode_session_diff") {
+          const { sessionId, messageId } = args;
+          if (!sessionId) throw new Error("sessionId required");
+          const query: any = {};
+          if (messageId) query.messageID = messageId;
+          const res = await this.apiClient.session.diff({ path: { id: sessionId }, query, throwOnError: true });
+          return { content: [{ type: "text", text: `Session Diff:\n${JSON.stringify(res.data, null, 2)}` }] };
+        }
+
+        if (toolName === "opencode_session_fork") {
+          const { sessionId, messageId } = args;
+          if (!sessionId) throw new Error("sessionId required");
+          const query: any = {};
+          if (messageId) query.messageID = messageId;
+          const res = await this.apiClient.session.fork({ path: { id: sessionId }, query, throwOnError: true });
+          return { content: [{ type: "text", text: `Session Forked:\n${JSON.stringify(res.data, null, 2)}` }] };
+        }
+
+        if (toolName === "opencode_session_revert") {
+          const { sessionId, messageId } = args;
+          if (!sessionId) throw new Error("sessionId required");
+          if (!messageId) throw new Error("messageId required");
+          const res = await this.apiClient.session.revert({
+            path: { id: sessionId },
+            body: { messageID: messageId },
+            throwOnError: true
+          });
+          return { content: [{ type: "text", text: `Session Reverted to ${messageId}:\n${JSON.stringify(res.data, null, 2)}` }] };
         }
 
         throw new Error(`Unrecognized tool: ${toolName}`);
