@@ -1,22 +1,27 @@
-import { expect, test, describe, beforeEach, afterEach, mock } from "bun:test";
+import { expect, test, describe, beforeEach, afterEach, beforeAll, afterAll } from "bun:test";
 import { OpenCodeMcpServer } from "../src/server.js";
-import MockAdapter from "axios-mock-adapter";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { http, HttpResponse } from "msw";
+import { setupServer } from "msw/node";
+
+const mockServer = setupServer();
+
+beforeAll(() => mockServer.listen({ onUnhandledRequest: 'error' }));
+afterEach(() => mockServer.resetHandlers());
+afterAll(() => mockServer.close());
 
 describe("OpenCodeMcpServer Unit Tests", () => {
   let mcpServer: OpenCodeMcpServer;
-  let mockAxios: MockAdapter;
   let mcpClient: Client;
 
   beforeEach(async () => {
     mcpServer = new OpenCodeMcpServer({
       url: "http://localhost:4096",
       password: "pwd",
-      autoStart: false, // Disable auto-start in unit tests
-      healthCacheTtlMs: 0, // Disable health cache in unit tests for deterministic behavior
+      autoStart: false,
+      healthCacheTtlMs: 0,
     });
-    mockAxios = new MockAdapter(mcpServer.apiClient);
 
     const transports = InMemoryTransport.createLinkedPair();
     await mcpServer.server.connect(transports[1]);
@@ -29,64 +34,85 @@ describe("OpenCodeMcpServer Unit Tests", () => {
   });
 
   afterEach(async () => {
-    mockAxios.restore();
     try {
-      await mcpServer.server.close();
+      await mcpServer.shutdown();
       await mcpClient.close();
-    } catch {
-      // Transport may already be closed
-    }
+    } catch {}
   });
 
+  // Helper to mock the proxy health check used in server.ts (app.agents)
+  const setHealthy = () => {
+    mockServer.use(
+      http.get("*/agent", () => {
+        return HttpResponse.json({ hephaestus: { name: "Hephaestus" } });
+      })
+    );
+  };
+
   test("should handle health object failures", async () => {
-    mockAxios.onGet("/global/health").reply(200, { healthy: false });
+    mockServer.use(
+      http.get("*/agent", () => {
+        return new HttpResponse(null, { status: 500 });
+      })
+    );
 
     const res: any = await mcpClient.callTool({
       name: "opencode_list_agents",
       arguments: {},
     });
     expect(res.isError).toBe(true);
-    expect(res.content[0].text).toContain("not reachable");
+    expect(res.content[0].text).toContain("Start it manually");
   });
 
   test("should handle network error", async () => {
-    mockAxios.onGet("/global/health").networkError();
+    mockServer.use(
+      http.get("*/agent", () => {
+        return HttpResponse.error();
+      })
+    );
     const res: any = await mcpClient.callTool({
       name: "opencode_list_agents",
       arguments: {},
     });
     expect(res.isError).toBe(true);
-    expect(res.content[0].text).toContain(
-      "not reachable",
-    );
+    expect(res.content[0].text).toContain("Start it manually");
   });
 
   test("should include actionable guidance in connection errors", async () => {
-    mockAxios.onGet("/global/health").networkError();
+    mockServer.use(
+      http.get("*/agent", () => {
+        return HttpResponse.error();
+      })
+    );
     const res: any = await mcpClient.callTool({
       name: "opencode_list_agents",
       arguments: {},
     });
     expect(res.isError).toBe(true);
-    expect(res.content[0].text).toContain("opencode serve --port 4096");
+    expect(res.content[0].text).toContain("Start it manually");
   });
 
   test("should execute opencode_list_agents", async () => {
-    mockAxios.onGet("/global/health").reply(200, { healthy: true });
-    mockAxios.onGet("/agent").reply(200, [{ id: "hephaestus" }]);
-
+    setHealthy();
     const res: any = await mcpClient.callTool({
       name: "opencode_list_agents",
       arguments: {},
     });
 
     expect(res.isError).toBeUndefined();
-    expect(res.content[0].text).toContain("hephaestus");
+    expect(res.content[0].text).toContain("Hephaestus");
   });
 
   test("should execute opencode_list_providers", async () => {
-    mockAxios.onGet("/global/health").reply(200, { healthy: true });
-    mockAxios.onGet("/provider").reply(200, { all: [{ id: "claude-3-5" }] });
+    setHealthy();
+    mockServer.use(
+      http.get("*/config/providers", () => {
+        return HttpResponse.json({
+          providers: [{ id: "claude-3-5" }],
+          default: {}
+        });
+      })
+    );
 
     const res: any = await mcpClient.callTool({
       name: "opencode_list_providers",
@@ -98,9 +124,11 @@ describe("OpenCodeMcpServer Unit Tests", () => {
   });
 
   test("should start opencode_ask_async", async () => {
-    mockAxios.onGet("/global/health").reply(200, { healthy: true });
-    mockAxios.onPost("/session").reply(200, { id: "test-session-123" });
-    mockAxios.onPost("/session/test-session-123/prompt_async").reply(204);
+    setHealthy();
+    mockServer.use(
+      http.post("*/session", () => HttpResponse.json({ id: "test-session-123" })),
+      http.post("*/session/test-session-123/prompt_async", () => new HttpResponse(null, { status: 204 }))
+    );
 
     const res: any = await mcpClient.callTool({
       name: "opencode_ask_async",
@@ -112,20 +140,22 @@ describe("OpenCodeMcpServer Unit Tests", () => {
   });
 
   test("should start opencode_ask_sync", async () => {
-    mockAxios.onGet("/global/health").reply(200, { healthy: true });
-    mockAxios.onPost("/session").reply(200, { id: "sync-session" });
-    mockAxios.onPost("/session/sync-session/prompt_async").reply(204);
-
-    // Polling setup: Returns stopped to exit while loop immediately
-    mockAxios.onGet("/session/status").reply(200, { "sync-session": "stopped" });
-    mockAxios.onGet("/session/sync-session/message?limit=10").reply(200, [
-      {
-        parts: [
-          { type: "text", text: "I fixed the issue." },
-          { type: "image" }, // simulate a non-text response part
-        ],
-      },
-    ]);
+    setHealthy();
+    mockServer.use(
+      http.post("*/session", () => HttpResponse.json({ id: "sync-session" })),
+      http.post("*/session/sync-session/prompt_async", () => new HttpResponse(null, { status: 204 })),
+      http.get("*/session/status", () => HttpResponse.json({ "sync-session": "stopped" })),
+      http.get("*/session/sync-session/message", ({ request }) => {
+        return HttpResponse.json([
+          {
+            parts: [
+              { type: "text", text: "I fixed the issue." },
+              { type: "image", mime: "image/png" }
+            ],
+          },
+        ]);
+      })
+    );
 
     const res: any = await mcpClient.callTool({
       name: "opencode_ask_sync",
@@ -133,16 +163,16 @@ describe("OpenCodeMcpServer Unit Tests", () => {
     });
 
     expect(res.isError).toBeUndefined();
-    expect(res.content[0].text).toContain("I fixed the issue");
+    expect(res.content[0].text).toContain("I fixed the issue.");
   });
 
   test("should get session status", async () => {
-    mockAxios.onGet("/global/health").reply(200, { healthy: true });
-    mockAxios
-      .onGet("/session/xyz123")
-      .reply(200, { id: "xyz123", title: "Testing" });
-    mockAxios.onGet("/session/xyz123/message?limit=10").reply(200, []);
-    mockAxios.onGet("/session/status").reply(200, { xyz123: "waiting_for_user" });
+    setHealthy();
+    mockServer.use(
+      http.get("*/session/xyz123", () => HttpResponse.json({ id: "xyz123", title: "Testing" })),
+      http.get("*/session/xyz123/message", () => HttpResponse.json([])),
+      http.get("*/session/status", () => HttpResponse.json({ xyz123: "waiting_for_user" }))
+    );
 
     const res: any = await mcpClient.callTool({
       name: "opencode_get_session",
@@ -154,8 +184,10 @@ describe("OpenCodeMcpServer Unit Tests", () => {
   });
 
   test("should execute opencode_run_shell with target ID", async () => {
-    mockAxios.onGet("/global/health").reply(200, { healthy: true });
-    mockAxios.onPost("/session/xyz/shell").reply(200, { status: "ok" });
+    setHealthy();
+    mockServer.use(
+      http.post("*/session/xyz/shell", () => HttpResponse.json({ status: "ok" }))
+    );
 
     const res: any = await mcpClient.callTool({
       name: "opencode_run_shell",
@@ -166,9 +198,12 @@ describe("OpenCodeMcpServer Unit Tests", () => {
   });
 
   test("should execute opencode_run_shell without target ID", async () => {
-    mockAxios.onGet("/global/health").reply(200, { healthy: true });
-    mockAxios.onPost("/session").reply(200, { id: "new-session" });
-    mockAxios.onPost("/session/new-session/shell").reply(200, { status: "ok" });
+    setHealthy();
+    mockServer.use(
+      http.post("*/session", () => HttpResponse.json({ id: "new-session" })),
+      http.post("*/session/new-session/shell", () => HttpResponse.json({ status: "ok" })),
+      http.delete("*/session/new-session", () => HttpResponse.json({}))
+    );
 
     const res: any = await mcpClient.callTool({
       name: "opencode_run_shell",
@@ -179,7 +214,7 @@ describe("OpenCodeMcpServer Unit Tests", () => {
   });
 
   test("should check opencode health", async () => {
-    mockAxios.onGet("/global/health").reply(200, { healthy: true });
+    setHealthy();
 
     const res: any = await mcpClient.callTool({
       name: "opencode_health_check",
@@ -191,8 +226,8 @@ describe("OpenCodeMcpServer Unit Tests", () => {
   });
 
   test("should get opencode config", async () => {
-    mockAxios.onGet("/global/health").reply(200, { healthy: true });
-    mockAxios.onGet("/config").reply(200, { model: "claude-3-opus" });
+    setHealthy();
+    mockServer.use(http.get("*/config", () => HttpResponse.json({ model: "claude-3-opus" })));
 
     const res: any = await mcpClient.callTool({
       name: "opencode_get_config",
@@ -204,8 +239,8 @@ describe("OpenCodeMcpServer Unit Tests", () => {
   });
 
   test("should set opencode config", async () => {
-    mockAxios.onGet("/global/health").reply(200, { healthy: true });
-    mockAxios.onPatch("/config").reply(200, { model: "gpt-4o" });
+    setHealthy();
+    mockServer.use(http.patch("*/config", () => HttpResponse.json({ model: "gpt-4o" })));
 
     const res: any = await mcpClient.callTool({
       name: "opencode_set_config",
@@ -217,7 +252,7 @@ describe("OpenCodeMcpServer Unit Tests", () => {
   });
 
   test("should handle unknown tools", async () => {
-    mockAxios.onGet("/global/health").reply(200, { healthy: true });
+    setHealthy();
 
     const res: any = await mcpClient.callTool({
       name: "unknown_xyz",
@@ -228,8 +263,8 @@ describe("OpenCodeMcpServer Unit Tests", () => {
   });
 
   test("should abort opencode session", async () => {
-    mockAxios.onGet("/global/health").reply(200, { healthy: true });
-    mockAxios.onPost("/session/xyz-session/abort").reply(200, {});
+    setHealthy();
+    mockServer.use(http.post("*/session/xyz-session/abort", () => HttpResponse.json({})));
 
     const res: any = await mcpClient.callTool({
       name: "opencode_abort_session",
@@ -241,8 +276,8 @@ describe("OpenCodeMcpServer Unit Tests", () => {
   });
 
   test("should delete opencode session", async () => {
-    mockAxios.onGet("/global/health").reply(200, { healthy: true });
-    mockAxios.onDelete("/session/del-session").reply(200, {});
+    setHealthy();
+    mockServer.use(http.delete("*/session/del-session", () => HttpResponse.json({})));
 
     const res: any = await mcpClient.callTool({
       name: "opencode_delete_session",
@@ -259,22 +294,21 @@ describe("OpenCodeMcpServer Unit Tests", () => {
     expect(res.tools.map((t: any) => t.name)).toContain("opencode_list_agents");
   });
 
-  test("should handle error when api throws 500 inside opencode_list_agents", async () => {
-    mockAxios.onGet("/global/health").reply(200, { healthy: true });
-    mockAxios.onGet("/agent").reply(500, { error: "fatal" });
+  test("should handle error when api throws 500 inside opencode_list_providers", async () => {
+    setHealthy();
+    mockServer.use(http.get("*/config/providers", () => HttpResponse.json({ error: "fatal error msg" }, { status: 500 })));
 
     const res: any = await mcpClient.callTool({
-      name: "opencode_list_agents",
+      name: "opencode_list_providers",
       arguments: {},
     });
     expect(res.isError).toBe(true);
-    expect(res.content[0].text).toContain("fatal");
+    expect(res.content[0].text).toContain("fatal error msg");
   });
 });
 
 describe("Input Validation", () => {
   let mcpServer: OpenCodeMcpServer;
-  let mockAxios: MockAdapter;
   let mcpClient: Client;
 
   beforeEach(async () => {
@@ -283,8 +317,10 @@ describe("Input Validation", () => {
       autoStart: false,
       healthCacheTtlMs: 0,
     });
-    mockAxios = new MockAdapter(mcpServer.apiClient);
-    mockAxios.onGet("/global/health").reply(200, { healthy: true });
+    
+    mockServer.use(
+      http.get("*/agent", () => HttpResponse.json({ hephaestus: { name: "Hephaestus" } }))
+    );
 
     const transports = InMemoryTransport.createLinkedPair();
     await mcpServer.server.connect(transports[1]);
@@ -297,13 +333,10 @@ describe("Input Validation", () => {
   });
 
   afterEach(async () => {
-    mockAxios.restore();
     try {
-      await mcpServer.server.close();
+      await mcpServer.shutdown();
       await mcpClient.close();
-    } catch {
-      // Transport may already be closed
-    }
+    } catch {}
   });
 
   test("should reject opencode_ask_sync with empty task", async () => {
@@ -312,8 +345,7 @@ describe("Input Validation", () => {
       arguments: { task: "" },
     });
     expect(res.isError).toBe(true);
-    expect(res.content[0].text).toContain("Validation error");
-    expect(res.content[0].text).toContain("task");
+    expect(res.content[0].text).toContain("task required");
   });
 
   test("should reject opencode_ask_async with missing task", async () => {
@@ -322,7 +354,7 @@ describe("Input Validation", () => {
       arguments: {},
     });
     expect(res.isError).toBe(true);
-    expect(res.content[0].text).toContain("Validation error");
+    expect(res.content[0].text).toContain("task required");
   });
 
   test("should reject opencode_run_shell with empty command", async () => {
@@ -331,8 +363,7 @@ describe("Input Validation", () => {
       arguments: { command: "", agent: "ops" },
     });
     expect(res.isError).toBe(true);
-    expect(res.content[0].text).toContain("Validation error");
-    expect(res.content[0].text).toContain("command");
+    expect(res.content[0].text).toContain("command required");
   });
 
   test("should reject opencode_run_shell with missing agent", async () => {
@@ -341,8 +372,7 @@ describe("Input Validation", () => {
       arguments: { command: "ls" },
     });
     expect(res.isError).toBe(true);
-    expect(res.content[0].text).toContain("Validation error");
-    expect(res.content[0].text).toContain("agent");
+    expect(res.content[0].text).toContain("agent required");
   });
 
   test("should reject opencode_abort_session with missing sessionId", async () => {
@@ -351,8 +381,7 @@ describe("Input Validation", () => {
       arguments: {},
     });
     expect(res.isError).toBe(true);
-    expect(res.content[0].text).toContain("Validation error");
-    expect(res.content[0].text).toContain("sessionId");
+    expect(res.content[0].text).toContain("sessionId required");
   });
 
   test("should reject opencode_set_config with non-object config", async () => {
@@ -361,14 +390,12 @@ describe("Input Validation", () => {
       arguments: { config: "not-an-object" },
     });
     expect(res.isError).toBe(true);
-    expect(res.content[0].text).toContain("Validation error");
-    expect(res.content[0].text).toContain("config");
+    expect(res.content[0].text).toContain("config object required");
   });
 });
 
 describe("Health Check Cache", () => {
   let mcpServer: OpenCodeMcpServer;
-  let mockAxios: MockAdapter;
   let mcpClient: Client;
 
   beforeEach(async () => {
@@ -377,7 +404,6 @@ describe("Health Check Cache", () => {
       autoStart: false,
       healthCacheTtlMs: 60_000, // Long TTL for testing cache behavior
     });
-    mockAxios = new MockAdapter(mcpServer.apiClient);
 
     const transports = InMemoryTransport.createLinkedPair();
     await mcpServer.server.connect(transports[1]);
@@ -390,23 +416,27 @@ describe("Health Check Cache", () => {
   });
 
   afterEach(async () => {
-    mockAxios.restore();
     try {
-      await mcpServer.server.close();
+      await mcpServer.shutdown();
       await mcpClient.close();
-    } catch {
-      // Transport may already be closed
-    }
+    } catch {}
   });
 
   test("should cache health check results across tool calls", async () => {
-    // First call — will hit the mock
-    mockAxios.onGet("/global/health").replyOnce(200, { healthy: true });
-    mockAxios.onGet("/agent").reply(200, [{ id: "alpha" }]);
-    mockAxios.onGet("/provider").reply(200, { all: [] });
+    let callCount = 0;
+    mockServer.use(
+      http.get("*/agent", () => {
+        callCount++;
+        if (callCount === 1) {
+          return HttpResponse.json({ hephaestus: {} });
+        }
+        return new HttpResponse(null, { status: 500 }); // Should not be called
+      }),
+      http.get("*/config/providers", () => HttpResponse.json({ providers: [], default: {} }))
+    );
 
     const res1: any = await mcpClient.callTool({
-      name: "opencode_list_agents",
+      name: "opencode_list_providers",
       arguments: {},
     });
     expect(res1.isError).toBeUndefined();
@@ -417,43 +447,49 @@ describe("Health Check Cache", () => {
       arguments: {},
     });
     expect(res2.isError).toBeUndefined();
+    expect(callCount).toBe(1); // Cached
   });
-
   test("should invalidate cache on error", async () => {
-    // First call succeeds
-    mockAxios.onGet("/global/health").replyOnce(200, { healthy: true });
-    mockAxios.onGet("/agent").replyOnce(200, []);
+    let callCount = 0;
+    mockServer.use(
+      http.get("*/agent", () => {
+        callCount++;
+        if (callCount === 1) return HttpResponse.json({ hephaestus: {} });
+        return new HttpResponse(null, { status: 500 }); // Should fail 2nd time checkOpencodeHealth is called
+      }),
+      http.get("*/config/providers", () => HttpResponse.json({ providers: [], default: {} }))
+    );
 
     await mcpClient.callTool({
-      name: "opencode_list_agents",
+      name: "opencode_list_providers",
       arguments: {},
     });
 
     // Manually invalidate cache
     mcpServer.invalidateHealthCache();
 
-    // Next health check should fail because no mock is registered
-    mockAxios.onGet("/global/health").replyOnce(500, { error: "down" });
-
     const res: any = await mcpClient.callTool({
-      name: "opencode_list_agents",
+      name: "opencode_list_providers",
       arguments: {},
     });
     expect(res.isError).toBe(true);
+    expect(callCount).toBe(2);
   });
 
   test("health_check tool should bypass cache", async () => {
-    // Seed the cache with a successful health check
-    mockAxios.onGet("/global/health").replyOnce(200, { healthy: true });
-    mockAxios.onGet("/agent").reply(200, []);
+    let callCount = 0;
+    mockServer.use(
+      http.get("*/agent", () => {
+        callCount++;
+        return HttpResponse.json({ hephaestus: {} });
+      }),
+      http.get("*/config/providers", () => HttpResponse.json({ providers: [], default: {} }))
+    );
 
     await mcpClient.callTool({
-      name: "opencode_list_agents",
+      name: "opencode_list_providers",
       arguments: {},
     });
-
-    // health_check should force a fresh check (second mock)
-    mockAxios.onGet("/global/health").replyOnce(200, { healthy: true });
 
     const healthRes: any = await mcpClient.callTool({
       name: "opencode_health_check",
@@ -461,11 +497,14 @@ describe("Health Check Cache", () => {
     });
     expect(healthRes.isError).toBeUndefined();
     expect(healthRes.content[0].text).toContain("true");
+    expect(callCount).toBe(2); // health_check bypassed cache
   });
 });
 
 describe("Auto-Start & Lifecycle", () => {
   test("should throw actionable error when autoStart is disabled and server unreachable", async () => {
+    mockServer.use(http.get("*/agent", () => HttpResponse.error()));
+    
     const server = new OpenCodeMcpServer({
       url: "http://localhost:19999", // Intentionally unreachable
       autoStart: false,
@@ -476,24 +515,21 @@ describe("Auto-Start & Lifecycle", () => {
       await server.ensureOpenCodeRunning();
       throw new Error("Should have thrown");
     } catch (error: any) {
-      expect(error.message).toContain("OpenCode server is not reachable");
-      expect(error.message).toContain("opencode serve --port");
+      expect(error.message).toContain("Start it manually");
     }
   });
 
   test("should skip auto-start if server is already healthy", async () => {
+    mockServer.use(http.get("*/agent", () => HttpResponse.json({ hephaestus: {} })));
+    
     const server = new OpenCodeMcpServer({
       url: "http://localhost:4096",
       autoStart: true,
       healthCacheTtlMs: 0,
     });
-    const mockAxios = new MockAdapter(server.apiClient);
-    mockAxios.onGet("/global/health").reply(200, { healthy: true });
 
     // Should NOT attempt to start — just validate health
     await server.ensureOpenCodeRunning();
-
-    mockAxios.restore();
   });
 
   test("shutdown should be idempotent", async () => {

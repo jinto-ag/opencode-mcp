@@ -29,8 +29,11 @@
     "@commitlint/cli": "^20.4.2",
     "@commitlint/config-conventional": "^20.4.2",
     "@types/bun": "latest",
-    "axios-mock-adapter": "^2.1.0",
-    "husky": "^9.1.7"
+    "@types/lodash-es": "^4.17.12",
+    "bun-types": "^1.3.10",
+    "husky": "^9.1.7",
+    "msw": "^2.12.10",
+    "nanoid": "^5.1.6"
   },
   "peerDependencies": {
     "typescript": "^5"
@@ -38,8 +41,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@opencode-ai/sdk": "^1.2.21",
-    "axios": "^1.13.6",
-    "axios-retry": "^4.5.0",
-    "dotenv": "^17.3.1"
+    "dotenv": "^17.3.1",
+    "lodash-es": "^4.17.23"
   }
 }
