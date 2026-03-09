@@ -220,11 +220,42 @@ This server exposes 19 tools to connected MCP clients:
   }
 }
 ```
-```
 
 ## IDE Integration
 
-Configure the server as an MCP tool provider in your preferred IDE. Provide the absolute path to `src/index.ts` or the compiled binary.
+You can configure this server locally or run it directly from GitHub without installation.
+
+### Zero-Install (Direct from GitHub)
+
+For the best experience, use `bunx` to run the server directly from the source:
+
+```json
+{
+  "mcpServers": {
+    "opencode": {
+      "command": "bunx",
+      "args": ["--bun", "github:jinto-ag/opencode-mcp"]
+    }
+  }
+}
+```
+
+Alternatively, with `npx`:
+
+```json
+{
+  "mcpServers": {
+    "opencode": {
+      "command": "npx",
+      "args": ["-y", "github:jinto-ag/opencode-mcp"]
+    }
+  }
+}
+```
+
+### Local Configuration
+
+Provide the absolute path to `src/index.ts` or the compiled binary.
 
 ### Claude Desktop
 
