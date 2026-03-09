@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.0] - 2026-03-09
+
+### Added
+
+- **MCP Resources Support**: Added native support for MCP resources, allowing clients to browse documentation, agent registries, and configurations.
+- **Resource Templates**: Added support for fetching session message history via `opencode://sessions/{sessionId}/logs`.
+- **New Resources**:
+  - `opencode://docs`: OpenCode high-level documentation.
+  - `opencode://agents/discovery`: Dynamic registry of discovered agents.
+  - `opencode://config/current`: Active server and API configuration.
+  - `opencode://mcp/status`: Real-time status of secondary MCP servers.
+
 ## [1.2.1] - 2026-03-09
 
 ### Fixed

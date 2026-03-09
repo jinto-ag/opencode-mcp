@@ -2,6 +2,9 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
+  ListResourcesRequestSchema,
+  ReadResourceRequestSchema,
+  ListResourceTemplatesRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { createOpencodeServer } from "@opencode-ai/sdk/server";
 import { createOpencodeClient, OpencodeClient } from "@opencode-ai/sdk/client";
@@ -49,8 +52,8 @@ export class OpenCodeMcpServer {
     this.healthCacheTtlMs = config.healthCacheTtlMs ?? 30_000;
 
     this.server = new Server(
-      { name: "opencode-mcp-server", version: "1.2.1" },
-      { capabilities: { tools: {} } },
+      { name: "opencode-mcp-server", version: "1.3.0" },
+      { capabilities: { tools: {}, resources: {} } },
     );
 
     let authHeader: string | undefined = undefined;
@@ -339,6 +342,118 @@ export class OpenCodeMcpServer {
       }
 
       return { tools: toolList };
+    });
+
+    this.server.setRequestHandler(ListResourcesRequestSchema, async () => {
+      return {
+        resources: [
+          {
+            uri: "opencode://docs",
+            name: "OpenCode Documentation",
+            description: "Overview of OpenCode capabilities and usage.",
+            mimeType: "text/markdown",
+          },
+          {
+            uri: "opencode://agents/discovery",
+            name: "Discovered Agents Registry",
+            description: "JSON metadata for all discovered OMO and OpenCode agents.",
+            mimeType: "application/json",
+          },
+          {
+            uri: "opencode://config/current",
+            name: "Current Server Configuration",
+            description: "Active OMO and OpenCode API configuration.",
+            mimeType: "application/json",
+          },
+          {
+            uri: "opencode://mcp/status",
+            name: "Secondary MCP Status",
+            description: "Status of MCP servers configured within OpenCode.",
+            mimeType: "application/json",
+          }
+        ]
+      };
+    });
+
+    this.server.setRequestHandler(ListResourceTemplatesRequestSchema, async () => {
+      return {
+        resourceTemplates: [
+          {
+            uriTemplate: "opencode://sessions/{sessionId}/logs",
+            name: "Session Message History",
+            description: "Fetch the last 20 messages for a specific session.",
+            mimeType: "text/plain",
+          }
+        ]
+      };
+    });
+
+    this.server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+      const uri = request.params.uri;
+
+      if (uri === "opencode://docs") {
+        return {
+          contents: [{
+            uri,
+            mimeType: "text/markdown",
+            text: "# OpenCode MCP Resources\n\nThis server provides access to OpenCode's agent orchestration engine via MCP.\n\n## Features\n- **OMO Orchestration**: Multi-agent loops (Sisyphus, Hephaestus).\n- **Resilient AI**: Automatic model rotation and retries.\n- **Command Discovery**: Access native OpenCode commands.\n\nUse `omo_sisyphus` for high-accuracy engineering tasks."
+          }]
+        };
+      }
+
+      if (uri === "opencode://agents/discovery") {
+        const agents = await this.omoDiscovery.getAvailableAgents();
+        return {
+          contents: [{
+            uri,
+            mimeType: "application/json",
+            text: JSON.stringify(agents, null, 2)
+          }]
+        };
+      }
+
+      if (uri === "opencode://config/current") {
+        const omo = this.omoConfig.get();
+        const oc = this.config;
+        return {
+          contents: [{
+            uri,
+            mimeType: "application/json",
+            text: JSON.stringify({ omo, opencode: oc }, null, 2)
+          }]
+        };
+      }
+      
+      if (uri === "opencode://mcp/status") {
+        await this.ensureOpenCodeRunning();
+        const res = await this.apiClient.mcp.status({ throwOnError: true });
+        return {
+          contents: [{
+            uri,
+            mimeType: "application/json",
+            text: JSON.stringify(res.data, null, 2)
+          }]
+        };
+      }
+
+      const sessionLogsMatch = uri.match(/^opencode:\/\/sessions\/([^/]+)\/logs$/);
+      if (sessionLogsMatch && sessionLogsMatch[1]) {
+         const sessionId = sessionLogsMatch[1];
+         await this.ensureOpenCodeRunning();
+         const res = await this.apiClient.session.messages({ path: { id: sessionId }, query: { limit: 20 }, throwOnError: true });
+         const messages = res.data || [];
+         const logText = (messages as any[]).map(m => `[${m.role}] ${m.parts?.map((p: any) => p.text).join(" ")}`).join("\n---\n");
+         
+         return {
+           contents: [{
+             uri,
+             mimeType: "text/plain",
+             text: logText || "No messages found for this session."
+           }]
+         };
+      }
+
+      throw new Error(`Resource not found: ${uri}`);
     });
 
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
