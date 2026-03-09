@@ -203,4 +203,22 @@ describe("OpenCodeMcpServer E2E Tests", () => {
     expect(deleteRes.isError).toBeUndefined();
     expect(deleteRes.content[0].text).toContain("deleted successfully");
   });
+
+  test("should list MCP status", async () => {
+    const res: any = await mcpClient.callTool({
+      name: "opencode_mcp_status",
+      arguments: {},
+    });
+    expect(res.isError).toBeUndefined();
+    expect(res.content[0].text).toContain("MCP Servers:");
+  });
+
+  test("should list PTY sessions", async () => {
+    const res: any = await mcpClient.callTool({
+      name: "opencode_pty_list",
+      arguments: {},
+    });
+    expect(res.isError).toBeUndefined();
+    expect(res.content[0].text).toContain("PTY Sessions:");
+  });
 });
